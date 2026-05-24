@@ -412,6 +412,8 @@ PPG quality + ICM motion
 
 2026.05.12 租的服务器上的尝试：
 用PPG和ICM的segment数据直接训练和第一优先级 不加入film
+
+
 【Gated Residual修正尺度实验：spectrum_rms 与 multiplicative】
 
 目的：
@@ -474,3 +476,8 @@ nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --
 
 
 加入对于residual的修改，使修改大小量级与spectrum特征的量级一致。
+
+修改划分方式 （--split_strategy db_file_temporal_80_20）
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy db_file_temporal_80_20 --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > new_logs/0524_Tao_difflr_new_split_test.log 2>&1 &
+
+nohup python main.py --data_source db --db_user Weiyi_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy db_file_temporal_80_20 --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > new_logs/0524_Weiyi_difflr_new_split_test.log 2>&1 &
