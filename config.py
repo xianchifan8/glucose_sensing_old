@@ -132,7 +132,7 @@ class DataConfig:
     train_split: float = 0.7
     val_split: float = 0.15
     test_split: float = 0.15
-    split_strategy: str = "random"  # random, temporal, stratified, experiment, date, date_random, max_day_train_min_day_test, alternating, hybrid_alternating, cross_user, multi_user_independent, tao_db_label_shuffle_debug
+    split_strategy: str = "random"  # random, temporal, stratified, experiment, date, date_random, max_day_train_min_day_test, alternating, hybrid_alternating, cross_user, multi_user_independent, db_file_temporal_80_20, tao_db_label_shuffle_debug
     n_splits: int = 10  # 交叉时序划分(alternating)的分段数
     date_random_repeats: int = 1  # date_random策略重复次数（建议5-10）
     date_train_days: Optional[int] = None  # date/date_random策略下训练日期数量（None表示按train_split推断）
@@ -293,6 +293,7 @@ class Config:
             "ar_history_weight": self.data.ar_history_weight,
             "date_random_repeats": self.data.date_random_repeats,
             "date_train_days": self.data.date_train_days,
+            "split_strategy": self.data.split_strategy,
         }
 
 

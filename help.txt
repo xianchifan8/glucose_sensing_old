@@ -1,0 +1,476 @@
+cd /data/yiheng/GlucoseMonitorCopy-main/Firmware/Training && mkdir -p logs && 
+nohup python main.py --model TCN --data_source db --db_users Tao_db Weiyi_db Yiheng_db --split_strategy multi_user_independent --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 20 --epochs 50 --lr 0.001 --batch_size 32 --no_wandb > logs/tcn_db_multi_user_independent_$(date +%Y%m%d_%H%M%S).log 2>&1 &
+
+修改了三个划分数据集的策略
+Baseline:
+python main.py --model TCN --data_source db --user Tao_db --split_strategy random -- no_val --mode window --window_size 50 --epochs 30 --normalize
+
+date 同用户按日期划分，命令行示例：
+python main.py \
+  --model TCN \
+  --data_source db \
+  --user Tao_db \
+  --split_strategy date \
+  --no_val \
+  --mode window --window_size 20 \
+  --epochs 50 --lr 0.001 --batch_size 32 \
+  --no_wandb
+
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy date --no_val --mode window --window_size 20 --epochs 50 --lr 0.001 --batch_size 32 --no_wandb > logs/Tao_db_date.log 2>&1 &
+
+cross_user 用A的全部数据训练 用B的全部数据测试
+python main.py \
+  --model TCN \
+  --data_source db \
+  --split_strategy cross_user \
+  --train_user_name Tao_db \
+  --predict_user_name Weiyi_db \
+  --predict_user_ratio 1.0 \
+  --no_val \
+  --mode window --window_size 50 \
+  --epochs 30 --lr 0.001 --batch_size 32 \
+  --no_wandb
+
+python main.py --model TCN --data_source db --split_strategy cross_user --train_user_name Tao_db --predict_user_name Weiyi_db --predict_user_ratio 1.0 --no_val --mode window --window_size 50 --epochs 30 --lr 0.001 --batch_size 32 --no_wandb
+
+multi_user_independent 多用户的数据一起训练，各自用户的测试集输出测试结果
+python main.py \
+  --model TCN \
+  --data_source db \
+  --db_users Tao_db Weiyi_db Yiheng_db \
+  --split_strategy multi_user_independent \
+  --no_val \
+  --train_split 0.8 --test_split 0.2 \
+  --mode window --window_size 20 \
+  --epochs 50 --lr 0.001 --batch_size 32 \
+  --no_wandb
+
+python main.py --model TCN --data_source db --db_users Tao_db Weiyi_db Yiheng_db --split_strategy multi_user_independent --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 20 --epochs 50 --lr 0.001 --batch_size 32 --no_wandb
+
+max_day_train_min_day_test 模式 （尝试一下只用一天的数据训练会怎么样）
+python main.py --data_source db --db_user Tao_db --split_strategy max_day_train_min_day_test --no_val --model TCN --mode instant --epochs 50 --lr 0.001 --batch_size 32 --dropout 0.1 --no_dropblock --normalize
+python main.py --data_source db --db_user Tao_db --split_strategy max_day_train_min_day_test --no_val --model TCN --mode instant --epochs 50 --lr 0.001 --batch_size 32
+
+Train logs
+2026.03.10
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy date --no_val --mode window --window_size 20 --epochs 50 --lr 0.001 --batch_size 32 --no_wandb > logs/Tao_db_date.log 2>&1 &
+
+nohup python main.py --model TCN --data_source db --user Weiyi_db --split_strategy date --no_val --mode window --window_size 20 --epochs 50 --lr 0.001 --batch_size 32 --no_wandb > logs/Weiyi_db_date.log 2>&1 &
+
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy random --no_val --mode window --window_size 50 --epochs 30 --normalize --no_wandb > logs/Tao_db_random_baseline.log 2>&1 &
+
+oh no window size没有控制变量
+
+2026.03.12
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy date --no_val --mode window --window_size 50 --epochs 20 --lr 0.001 --batch_size 32 --no_wandb > logs/Tao_db_date_valid.log 2>&1 &
+
+nohup python main.py --model TCN --data_source db --split_strategy cross_user --train_user_name Tao_db --predict_user_name Weiyi_db --predict_user_ratio 0.5 --no_val --mode window --window_size 50 --epochs 30 --lr 0.001 --batch_size 32 --no_wandb > logs/Tao_train_Weiyi_test.log 2>&1 & 
+好像有问题？会把服务器跑宕机掉 3.13解决了
+
+2026.03.13
+nohup python main.py --model TCN --data_source db --db_users Tao_db Weiyi_db Yiheng_db --split_strategy multi_user_independent --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 50 --epochs 30 --lr 0.001 --batch_size 32 --no_wandb > logs/All_train_each_test.log 2>&1 &
+
+2026.03.17
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy date --no_val --mode window --window_size 50 --epochs 20 --lr 0.0002 --batch_size 32 --no_wandb > logs/Tao_db_date_less_lr.log 2>&1 &
+
+2026.03.18
+nohup python main.py --data_source db --db_user Tao_db --split_strategy max_day_train_min_day_test --no_val --mode window --window_size 50 --epochs 20 --lr 0.001 --batch_size 32 --no_wandb --dropout 0.1 --no_dropblock --normalize > logs/Tao_db_one_day_train_test.log 2>&1 &
+
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy date --no_val --mode window --window_size 50 --epochs 20 --lr 0.001 --batch_size 32 --no_wandb --dropout 0.1 --no_dropblock --normalize > logs/Tao_db_date_valid.log 2>&1 &
+
+2026.03.19
+nohup python main.py --model TCN --data_source db --split_strategy cross_user --train_user_name Tao_db --predict_user_name Weiyi_db --predict_user_ratio 0.5 --no_val --mode window --window_size 50 --epochs 30 --lr 0.001 --batch_size 32 --no_wandb --dropout 0.1 --no_dropblock --normalize > logs/Tao_train_Weiyi_test_new.log 2>&1 &
+当前训练结果：过拟合
+nohup python main.py --model TCN --data_source db --db_users Tao_db Weiyi_db Yiheng_db --split_strategy multi_user_independent --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 50 --epochs 30 --lr 0.001 --batch_size 32 --no_wandb --dropout 0.1 --no_dropblock --normalize > logs/All_train_each_test_new.log 2>&1 &
+当前训练结果：正常收敛 （可以认为与random没有本质区别）
+
+2026.03.20
+在先前的调参基础上尝试放缓调参，在cross_user以及date划分方式下解决过拟合问题
+
+python main.py \
+  --model TCN \
+  --data_source db \
+  --split_strategy cross_user \
+  --train_user_name Tao_db \
+  --predict_user_name Weiyi_db \
+  --predict_user_ratio 0.5 \
+  --mode window --window_size 50 \
+  --epochs 40 \
+  --lr 0.0003 \
+  --batch_size 32 \
+  --dropout 0.2 \
+  --weight_decay 0.001 \
+  --loss Huber --huber_delta 0.8 \
+  --normalize \
+  --no_wandb
+
+python main.py --model TCN --data_source db --split_strategy cross_user --train_user_name Tao_db --predict_user_name Weiyi_db --predict_user_ratio 0.5 --mode window --window_size 50 --epochs 30 --lr 0.0003 --batch_size 32 --dropout 0.2 --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize --no_wandb
+nohup python main.py --model TCN --data_source db --split_strategy cross_user --train_user_name Tao_db --predict_user_name Weiyi_db --predict_user_ratio 0.5 --mode window --window_size 50 --epochs 30 --lr 0.0003 --batch_size 32 --dropout 0.2 --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize --no_wandb > logs/Tao_train_Weiyi_test_MOD.log 2>&1 &
+
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy date --no_val --mode window --window_size 50 --epochs 20 --lr 0.0003 --batch_size 32 --no_wandb --dropout 0.2 --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize > logs/Tao_db_date_valid_mod.log 2>&1 &
+
+训练情况总结 2026 03 23：
+1. 按日期划分，可以在训练集上正常收敛，但是在测试集上表现较差，目前考虑较差的原因可能有两个
+一个是血糖按日期划分数据分布差异较大，另一个是目前我们的日期数据较少，不能有效学习到与日期相关的信息（存疑）
+但是按日期划分的测试集上效果好于在用户A数据上训练，在用户B数据上测试。
+2. 用户A数据上训练，用户B数据上测试，这部分可以在训练集上收敛，在测试集上表现相较于按日期划分更差
+这种数据划分方式由于没有办法衡量不同个体之间血糖数据信号的差异性，这种较差的训练效果看起来是必然的。
+3. 全部用户数据上训练，各自用户单独测试，这部分训练效果极好，在训练集上与测试集上均可以达到较好的预测效果。
+本质上这种数据划分方式与单用户random划分数据没有区别，取得这种结果并不奇怪。
+目前的训练结果可以在一定程度上认为当前的TCN模型在不同用户的血糖数据上存在一定的泛化能力。
+
+2026.03.23 增加对于训练集上MAPE指标以及优化了Clarke Error Grid的计算，重新完成三个划分方式的测试
+nohup python main.py --model TCN --data_source db --db_users Tao_db Weiyi_db Yiheng_db --split_strategy multi_user_independent --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 50 --epochs 20 --lr 0.001 --batch_size 32 --no_wandb --dropout 0.1 --no_dropblock --normalize > logs/All_train_each_test_new_mod.log 2>&1 &
+
+nohup python main.py --model TCN --data_source db --split_strategy cross_user --train_user_name Tao_db --predict_user_name Weiyi_db --predict_user_ratio 0.5 --mode window --window_size 50 --epochs 30 --lr 0.0003 --batch_size 32 --dropout 0.2 --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize --no_wandb > logs/Tao_train_Weiyi_test_mod.log 2>&1 &
+
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy date --no_val --mode window --window_size 50 --epochs 20 --lr 0.0003 --batch_size 32 --no_wandb --dropout 0.2 --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize > logs/Tao_db_date_mod.log 2>&1 &
+
+
+2026.03.30
+多随机几次的按日期划分数据集
+python main.py \
+  --data_source db \
+  --split_strategy date_random \
+  --user Tao_db \
+  --date_random_repeats 5 \
+  --date_train_days 3 \
+  --epochs 50 \
+  --no_val --train_split 0.8 --test_split 0.2
+
+nohup python main.py --data_source db --split_strategy date_random --user Tao_db --date_random_repeats 5 --date_train_days 3 --epochs 20 --no_val --mode window --window_size 50 --train_split 0.8 --test_split 0.2 --lr 0.0003 --batch_size 32 --no_wandb --dropout 0.2 --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize > logs/Tao_db_random_date_test.log 2>&1 &
+
+nohup python main.py --data_source db --split_strategy date_random --user Tao_db --date_random_repeats 5 --date_train_days 3 --seed 2026 --epochs 20 --no_val --mode window --window_size 50 --train_split 0.8 --test_split 0.2 --lr 0.0003 --batch_size 32 --no_wandb --dropout 0.2 --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize > logs/Tao_db_random_date_test_more.log 2>&1 &
+
+2026.04.08 多模态数据融合
+python main.py \
+  --data_source db \
+  --db_user Tao_db \
+  --model TCN \
+  --mode window \
+  --window_duration 600 \
+  --data_fusion \
+  --fusion_stage late \
+  --fusion_method_late cross_attention \
+  --split_strategy random \
+  --no_val \
+  --train_split 0.8 \
+  --test_split 0.2 \
+  --normalize \
+  --epochs 50 \
+  --lr 0.001 \
+  --dropout 0.15
+
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late cross_attention --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize > logs/Tao_db_random_date_multimodal.log 2>&1 &
+
+
+nohup python main.py --data_source db --split_strategy date_random --user Tao_db --date_random_repeats 5 --date_train_days 4 --epochs 20 --no_val --mode window --window_size 50 --train_split 0.8 --test_split 0.2 --lr 0.0003 --batch_size 32 --no_wandb --dropout 0.2 --weight_decay 0.001 --loss Huber --huber_delta 0.8 --normalize > logs/Tao_db_4_train_1_test.log 2>&1 &
+
+先来与Baseline对比
+
+nohup python main.py --model TCN --data_source db --user Tao_db --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 50 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_singlemodal.log 2>&1 &
+
+融合版（好像没啥用）
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late cross_attention_film --late_film_aux_indices 0 1 2 4 --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_multimodal_cafilm.log 2>&1 &
+
+PPG ICM only
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late aux_cross_only --late_film_aux_indices 0 1 2 4 --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_auxonly.log 2>&1 &
+
+Film only
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late film_aux_only --late_film_aux_indices 0 1 2 4 --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_film_aux_only.log 2>&1 &
+
+
+Tao_db 测试错误输入下的模型训练结果
+nohup python main.py --data_source db --db_user Tao_db --split_strategy tao_db_label_shuffle_debug --no_val --train_split 0.8 --test_split 0.2 --model TCN --mode window --window_size 50 --epochs 30 --lr 0.001 --batch_size 32 --normalize --no_wandb > logs/Tao_db_wrong_debug.log 2>&1 &
+
+
+向损失函数中加入与MAE有关的Loss信息
+
+随机划分下加入窗口MAE辅助损失（保持 spectrum 与 ground truth 一一对应，不使用 tao_db_label_shuffle_debug）
+
+单模态，窗口MAE=4个batch，建议先从这个开始
+nohup python main.py --model TCN --data_source db --db_user Tao_db --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 50 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_db_random_singlemodal_mae_win4.log 2>&1 &
+
+单模态，窗口MAE=8个batch，用于对比更平滑的MAE窗口
+nohup python main.py --model TCN --data_source db --db_user Tao_db --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 50 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 8 > logs/Tao_db_random_singlemodal_mae_win8.log 2>&1 &
+
+单模态，窗口MAE=4个batch，稍强一些的MAE辅助权重
+nohup python main.py --model TCN --data_source db --db_user Tao_db --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 50 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.2 --mae_window_batches 4 > logs/Tao_db_random_singlemodal_mae_w0p2_win4.log 2>&1 &
+
+多模态 cross_attention_film，保持原多模态设置不变，加入窗口MAE=4个batch
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late cross_attention_film --late_film_aux_indices 0 1 2 4 --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_db_random_multimodal_cafilm_mae_win4.log 2>&1 &
+
+PPG only MAE=4
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late aux_cross_only --late_film_aux_indices 0 1 2 4 --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_db_random_auxonly_mae_win4.log 2>&1 &
+
+错误数据 MAE = 4
+nohup python main.py --data_source db --db_user Tao_db --split_strategy tao_db_label_shuffle_debug --no_val --train_split 0.8 --test_split 0.2 --model TCN --mode window --window_size 50 --epochs 30 --lr 0.001 --batch_size 32 --normalize --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_db_wrong_debug_mae_win4.log 2>&1 &
+
+新的多模态方法（用PPG & ICM 运动数据做修正，同时增加了特征提取的部分）
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_db_random_gated_residual_engineered_mae_win4.log 2>&1 &
+
+先不win_4试一下吧 （NNI超参数选择）
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_gated_residual_engineered.log 2>&1 &
+
+在不加入MAE损失的前提下，使用NNI进行超参数选择优化
+nnictl create --config nni_config.yml --port 8090
+nohup nnictl create --config nni_config.yml --port 8090 > logs/nni_tao_db_gated_residual.log 2>&1 &
+
+重来
+nohup nnictl create --config nni_config.yml --port 8090 > logs/nni_tao_db_gated_residual_1.log 2>&1 &
+
+
+探究一下gated_residual 以及数据处理分别加入会对结果有没有提高（做一个消融实验）
+不用gated_residual
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late cross_attention_film --aux_feature_mode engineered --late_film_aux_indices 0 1 2 4 --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_db_random_cafilm_engineered_mae_win4.log 2>&1 &
+no win 4
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late cross_attention_film --aux_feature_mode engineered --late_film_aux_indices 0 1 2 4 --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_cafilm_engineered.log 2>&1 &
+不用PPG/ICM工程特征
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode raw --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_db_random_gated_residual_raw_mae_win4.log 2>&1 &
+no win 4
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode raw --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_gated_residual_raw.log 2>&1 &
+
+目前的gated residual是否加入了T117等相关信息？ 如果没加入可以再加入其中一起完成训练
+修改：PPG & ICM数据gated_residual 再经过温湿度信息做film调制   (2026.05.09更新 效果好像不太行)
+python main.py --data_fusion --fusion_stage late --fusion_method_late ppg_icm_gated_residual_film --aux_feature_mode engineered
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late ppg_icm_gated_residual_film --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_ppg_icm_gated_residual_film_engineered.log 2>&1 &
+
+使用特征提取之后的PPG & ICM数据直接进行血糖值预测 
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late ppg_icm_engineered_only --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_ppg_icm_engineered_only.log 2>&1 &
+
+win4 的版本
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late ppg_icm_engineered_only --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_ppg_icm_engineered_only_mae4.log 2>&1 &
+
+使用一段时间的PPG / ICM 数据直接进行血糖值预测 ## 2026.05.11 还没跑
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late ppg_icm_segment_raw_only --aux_feature_mode segment_raw --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_ppg_icm_segment_raw_only.log 2>&1 &
+
+mae win = 4
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late ppg_icm_segment_raw_only --aux_feature_mode segment_raw --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --mae_window_loss_weight 0.1 --mae_window_batches 4 > logs/Tao_ppg_icm_segment_raw_only_mae_4.log 2>&1 &
+
+
+2026.05.11 下一轮最优先尝试：不再使用MAE窗口损失，保留当前最有效结构
+结论：单spectrum、cross_attention、cross_attention+film效果都在MAE约1.4；engineered PPG/ICM + 全部aux gated_residual明显更好。
+因此下一步不要换融合结构，优先在 gated_residual + engineered 上做小范围稳态调参。
+可直接运行：
+bash run_gated_residual_engineered_next.sh
+
+最推荐先跑：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.0007 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.0005 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_gres_eng_lr7e4_wd5e4.log 2>&1 &
+
+备选1：降低dropout，测试当前结构是否仍偏欠拟合
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.0007 --dropout 0.10 --batch_size 32 --no_wandb --weight_decay 0.0005 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_gres_eng_lr7e4_dr10_wd5e4.log 2>&1 &
+
+备选2：Huber delta=1.0，增强较大误差区域的二次惩罚，观察RMSE/R2是否改善
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.0007 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.0005 --loss Huber --huber_delta 1.0 > logs/Tao_db_random_gres_eng_lr7e4_wd5e4_huber1p0.log 2>&1 &
+
+备选3：Huber delta=0.6，测试对运动/接触异常段更鲁棒是否更好
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.0007 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.0005 --loss Huber --huber_delta 0.6 > logs/Tao_db_random_gres_eng_lr7e4_wd5e4_huber0p6.log 2>&1 &
+
+最终验证：找到random划分最优参数后，用date_random重复划分验证泛化稳定性
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy date_random --date_random_repeats 5 --date_train_days 4 --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.0007 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.0005 --loss Huber --huber_delta 0.8 > logs/Tao_db_daterandom_gres_eng_lr7e4_wd5e4.log 2>&1 &
+
+
+2026.05.12 除调参外的合理尝试方向
+
+当前已知信息：
+1. 单spectrum、spectrum+aux cross_attention、spectrum+PPG/ICM cross_attention再用温湿度FiLM，效果都较差，MAE约1.4。
+2. 加入MAE窗口损失对这些弱结构可能有帮助，但对 gated_residual + engineered 会降低效果。
+3. 最新有效路径是 aux_feature_mode=engineered 后，使用全部aux与主模态做 gated_residual。
+
+因此后续结构尝试不应回到cross_attention/FiLM主线，而应围绕 gated_residual 做可解释消融：
+
+第一优先级：PPG/ICM-only gated residual，不加环境FiLM
+目的：单独验证提升是否来自PPG/ICM质量/运动特征对spectrum的门控残差修正。
+说明：此前 ppg_icm_gated_residual_film 同时引入了环境FiLM，效果差不能说明PPG/ICM-only gate无效。
+新增方法：--fusion_method_late ppg_icm_gated_residual_only
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late ppg_icm_gated_residual_only --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_ppg_icm_gated_residual_only_engineered.log 2>&1 &
+
+第二优先级：记录gate/correction诊断
+目的：观察residual_scale、gate均值、gate分位数、correction_norm/spectrum_norm，判断aux是在适度修正还是过度修正。
+备注：这需要继续改trainer或fusion head输出诊断，不建议和结构实验同时混在一个对照里。
+新增开关：--fusion_diagnostics
+当前最佳结构诊断命令：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --fusion_diagnostics > logs/Tao_db_random_gated_residual_engineered_diag.log 2>&1 &
+第一优先级新结构诊断命令：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late ppg_icm_gated_residual_only --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --fusion_diagnostics > logs/Tao_db_random_ppg_icm_gated_residual_only_engineered_diag.log 2>&1 &
+输出指标说明：
+residual_scale：残差修正全局尺度
+gate_mean/gate_p25/p50/p75：门控开启程度
+correction_norm：实际修正量范数
+correction_to_spectrum_ratio：修正量相对spectrum特征范数的比例
+若corr/spec过大或gate长期接近1，说明aux可能在过度改写主模态；若gate长期接近0，说明aux修正分支基本未被使用。
+2026.05.13诊断修正：
+若输出长期为 scale=0.0000、gate_mean=0.5000、corr/spec=0.0000、corr_norm=0.0000，这不是正常的“aux无效”结论，而是gated residual分支被scale锁死的异常信号。
+原因：旧实现用 clamp(residual_scale, 0, 1) 约束scale；若训练早期 residual_scale 被更新到负数，clamp后实际scale恒为0，且负区间梯度为0，残差修正分支无法恢复。
+已修正：residual_scale改为sigmoid有界参数，初始有效scale仍为0.1；优化器不再对residual_scale做weight_decay；诊断输出新增scale_raw、gate_std、res_norm。
+如需复现旧实现，可显式使用 --gated_residual_scale_mode clamp。默认仍为sigmoid，不影响当前修复后的实验。
+旧实现等价于 scale = torch.clamp(self.residual_scale, 0.0, 1.0)，residual_scale初始为0.1，并按普通参数参与weight_decay。
+原先gated_residual方法加回旧scale实现后的运行命令（不改其他超参数）：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --gated_residual_scale_mode clamp > logs/Tao_db_random_gated_residual_engineered_scale_clamp.log 2>&1 &
+若要同时观察旧scale是否再次被锁死，可追加诊断：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --gated_residual_scale_mode clamp --fusion_diagnostics > logs/Tao_db_random_gated_residual_engineered_scale_clamp_diag.log 2>&1 &
+2026.05.14旧clamp实现优秀结果复现实验：
+目的：复跑旧实现中表现很好的超参数组合，并打开fusion_diagnostics观察训练期间scale/gate/correction的变化，解释为什么该命令效果好。
+当前输出足够观察的指标：Train(FusionDiag)与Test(FusionDiag)会按epoch输出scale、scale_raw、gate_mean、gate_std、gate_p25/p50/p75、corr/spec、corr_norm、res_norm。
+注意：该诊断是epoch级eval口径，不是逐batch梯度追踪；若需要定位某个batch上的突变，再额外增加batch级debug。
+复现实验命令：
+nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode clamp --fusion_diagnostics > logs/Tao_db_random_gated_residual_engineered_old_clamp_best_diag.log 2>&1 &
+修正后应先重新跑第二优先级诊断，而不是继续解释旧诊断日志：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --fusion_diagnostics > logs/Tao_db_random_gated_residual_engineered_diag_scale_fix.log 2>&1 &
+判断标准：
+正常情况：scale不应长期为0，gate_std应明显大于0，corr_norm/corr_spec应非0但不过大。
+若scale仍快速接近0：说明模型主动选择不用aux修正，此时第三优先级correction正则应暂停，优先尝试更小lr或两阶段训练。
+若corr/spec偏大且测试集变差：再进行第三优先级gated correction正则。
+2026.05.14 sigmoid模式塌缩修正：
+现象：sigmoid模式可能出现scale_raw降到很小，例如-9左右，导致scale约1e-4、corr_norm约0、gate_std约0，aux残差修正分支等价于关闭，MAE明显变差。
+原因：sigmoid避免了clamp负区间零梯度，但没有防止scale被优化到接近0；一旦scale过小，gate/residual分支有效梯度也会消失。
+已修正：sigmoid模式新增gated_residual_min_scale，默认0.02；scale = min_scale + (1 - min_scale) * sigmoid(raw)，初始有效scale仍为0.1。
+建议先跑带诊断的sigmoid floor版本：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --fusion_diagnostics > logs/gated_residual_engineered_sigmoid_floor002_diag.log 2>&1 &
+用旧clamp优秀超参数测试sigmoid floor：
+nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --fusion_diagnostics > logs/Tao_db_random_gated_residual_engineered_sigmoid_floor002_besthp_diag.log 2>&1 &
+若corr/spec仍很小，可尝试min_scale=0.05；若corr/spec明显过大，再回到第三优先级correction正则。
+2026.05.14差异学习率尝试：
+动机：scale是全局标量，学习率过大时可能比TCN主干更快塌缩；但旧clamp在优秀超参下第一个epoch后仍可能scale=0，因此差异学习率只是合理尝试，不保证一定恢复多模态收益。
+新增开关：--gated_residual_differential_lr，默认关闭，不影响已有实验。
+参数说明：base_model/TCN使用主--lr；aux_encoder、fusion_head、gate_net、residual_net、output_head使用--gated_residual_fusion_lr；residual_scale使用--gated_residual_scale_lr。
+建议优先测试：保持旧优秀主lr=0.0006632726129567153，让fusion分支更慢，scale更慢，并打开诊断。
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > logs/Tao_db_random_gated_residual_engineered_sigmoid_floor002_difflr_besthp_diag.log 2>&1 &
+判断：若scale稳定但gate_std/corr_norm仍接近0，说明问题不是scale学习率，而是模型仍主动选择不用aux；此时应优先比较spectrum_only_late_head而不是继续压低lr。
+
+第二点五优先级：验证旧gated_residual提升到底来自哪里
+背景：旧诊断中scale被锁死为0，但gated_residual仍然优于原始单模态，这说明旧提升不一定来自aux gated residual修正。
+最合理解释：当correction=0时，gated_residual路径退化为 spectrum_features + late fusion output_head；它仍然不同于原始单模态模型，因为late fusion head包含额外MLP、LayerNorm、Dropout，并且训练走extract_features再接新预测头。
+目的：把“late fusion预测头带来的提升”和“engineered aux通过gated residual带来的提升”拆开。
+
+优先验证顺序：
+1. 重新跑修复后的 gated_residual + engineered + diagnostics，确认scale/gate/correction真实工作。
+命令同第二优先级修正后的 scale_fix 诊断命令。
+
+2. 跑原始单模态baseline，作为最低参照。
+nohup python main.py --model TCN --data_source db --db_user Tao_db --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --mode window --window_size 50 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_db_random_singlemodal_baseline_rerun.log 2>&1 &
+
+3. 跑aux置零的 gated_residual + engineered 近似对照，用于初步判断late fusion head/结构路径是否本身带来收益。
+注意：这不是严格的spectrum-only late-head baseline，因为gate/residual网络仍然存在，只是aux输入被固定为0；若它接近旧gated_residual效果，说明旧提升很可能主要来自late fusion head或训练路径。
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --aux_override --aux_override_value 0.0 --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --fusion_diagnostics > logs/Tao_db_random_gated_residual_engineered_auxzero_diag.log 2>&1 &
+
+4. 跑最干净的 spectrum_only_late_head 对照：只使用 base_model.extract_features(spectrum) 接与gated_residual相同规格的output_head，不编码aux、不生成gate/residual、不做correction。
+新增方法：--fusion_method_late spectrum_only_late_head
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late spectrum_only_late_head --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 30 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 > logs/Tao_spectrum_only_late_head_engineered.log 2>&1 &
+该对照完成后应比较：
+A. 原始单模态baseline
+B. spectrum_only_late_head
+C. 修复后的 gated_residual + engineered
+D. 修复后的 gated_residual + engineered + diagnostics
+判断：
+若B接近旧gated_residual，旧提升主要来自late fusion head/训练路径。
+若C明显优于B，且诊断显示scale非0、gate_std非0、corr_norm非0，才能说明engineered aux通过gated residual真实提供了增益。
+若C不优于B，第三优先级correction正则不应继续，优先研究late head结构、主模态特征提取或aux特征有效性。
+
+第三优先级：gated correction正则
+目的：不用MAE窗口损失，而是直接约束修正量，避免aux过度改变spectrum。
+形式：loss = Huber + lambda * mean((scale * gate * residual)^2)
+建议lambda：1e-4、5e-4、1e-3
+新增开关：--fusion_correction_loss_weight，默认0表示关闭，不影响原有训练流程。
+推荐基于当前最佳结构 gated_residual + engineered 进行，不再回到效果较差的cross_attention/FiLM主线。
+轻度正则：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --fusion_correction_loss_weight 0.0001 > logs/Tao_db_random_gated_residual_engineered_corrreg_1e-4.log 2>&1 &
+中等正则：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --fusion_correction_loss_weight 0.0005 > logs/Tao_db_random_gated_residual_engineered_corrreg_5e-4.log 2>&1 &
+较强正则：
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --fusion_correction_loss_weight 0.001 > logs/Tao_db_random_gated_residual_engineered_corrreg_1e-3.log 2>&1 &
+可选：与第二优先级诊断一起观察修正量是否被压住，但正式对照时建议先单独比较上面三条命令。
+nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 50 --lr 0.001 --dropout 0.15 --batch_size 32 --no_wandb --weight_decay 0.001 --loss Huber --huber_delta 0.8 --fusion_correction_loss_weight 0.0005 --fusion_diagnostics > logs/Tao_db_random_gated_residual_engineered_corrreg_5e-4_diag.log 2>&1 &
+训练输出会新增 Train(FusionCorrReg)，表示每个batch加入总loss前的正则项数值均值；若该值接近0，说明修正分支本身很保守，若明显偏大则说明aux残差修正较强。
+
+第四优先级：gate保守/稀疏正则
+目的：让gate默认少开，只在PPG/ICM质量或运动状态确实有帮助时修正。
+形式：loss = Huber + lambda_gate * mean(gate)
+建议lambda_gate：1e-4、5e-4
+
+第五优先级：两阶段训练
+目的：先让spectrum主干学稳，再解冻aux gated_residual修正器。
+方案：前5-10个epoch冻结aux_encoder/gate_net/residual_net或固定residual_scale=0，后续全模型训练。
+
+第六优先级：modality dropout / aux dropout
+目的：训练时随机将aux置零一部分batch，防止模型过度依赖aux局部相关性。
+建议p：0.1、0.2
+
+第七优先级：engineered特征组消融
+目的：确认到底是哪类engineered特征在帮助gated_residual。
+建议组：
+PPG quality only：ppg_raw_std、ppg_filter_std、ppg_clip_frac
+PPG physiology only：hr、hrv、peak_rate
+ICM motion only：acc_dynamic_rms、gyro_energy、gyro_std
+PPG quality + ICM motion
+全部engineered
+
+第八优先级：lag/rolling engineered特征
+目的：考虑PPG/ICM状态与spectrum/血糖响应之间可能存在滞后。
+方案：加入t-1s、t-3s、t-5s或rolling mean/std的engineered aux特征。
+
+
+2026.05.12 租的服务器上的尝试：
+用PPG和ICM的segment数据直接训练和第一优先级 不加入film
+【Gated Residual修正尺度实验：spectrum_rms 与 multiplicative】
+
+目的：
+验证当前 residual 被 tanh 限制在 [-1, 1] 后，是否因为 correction 幅度过小而限制 aux 对 spectrum latent feature 的有效修正。
+
+模式1：spectrum_rms
+公式：
+correction = scale * gate * residual * RMS(spectrum_features)
+corrected = spectrum_features + correction
+特点：
+每个样本使用一个统一的 spectrum latent RMS 作为尺度，能放大 residual，但如果不同 feature 维度尺度差异很大，可能不够精细。
+
+Tao_db spectrum_rms命令：
+nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_correction_scale spectrum_rms --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > new_logs/0519_Tao_gated_residual_engineered_spectrum_rms_difflr_diag.log 2>&1 &
+
+Weiyi_db spectrum_rms命令：
+nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --db_user Weiyi_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_correction_scale spectrum_rms --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > new_logs/0519_Weiyi_gated_residual_engineered_spectrum_rms_difflr_diag.log 2>&1 &
+
+模式2：multiplicative
+公式：
+corrected = (1 + scale * gate * residual) * spectrum_features
+等价于：
+correction = scale * gate * residual * spectrum_features
+特点：
+每个 feature 维度按自身大小做相对修正，避免统一 RMS 对不同尺度维度处理过粗。由于 scale/gate/residual 的范围限制，乘性因子通常在 [0, 2] 附近，更像对 spectrum latent feature 做逐维增益调制。
+
+Tao_db multiplicative命令：
+nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_correction_scale multiplicative --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > new_logs/0519_Tao_gated_residual_engineered_multiplicative_difflr_diag.log 2>&1 &
+
+Weiyi_db multiplicative命令：
+nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --db_user Weiyi_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_correction_scale multiplicative --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > new_logs/0519_Weiyi_gated_residual_engineered_multiplicative_difflr_diag.log 2>&1 &
+
+对照方式：
+优先比较同一数据集下 none / spectrum_rms / multiplicative 的 BEST_TEST_MAE、最终MAE、corr/spec、corr_abs/spec_abs、amp、gate_std。
+如果 multiplicative 改善且 corr_abs/spec_abs 更稳定，说明逐维相对修正比统一 RMS 更适合当前 spectrum latent feature。
+如果 spectrum_rms 或 multiplicative 在 Weiyi_db 上进一步变差，说明该数据集更可能不需要 aux 修正，或需要更强的 gate 选择性/更小 min_scale。
+
+【Aux真实性验证：Aux Shuffle打乱对照】
+
+目的：
+在不改变spectrum与血糖标签正确对应关系的前提下，只打乱aux辅助模态数据，验证gated residual提升是否来自真实aux信息。
+如果打乱aux后Tao_db效果仍接近原多模态，说明收益可能主要来自late head/残差结构容量；如果明显下降到spectrum_only_late_head附近或更差，说明aux确实提供了有效信息。
+如果Weiyi_db打乱aux后反而改善，说明当前aux残差修正在该数据集上更可能是过度修正或噪声注入。
+
+新增参数：
+--aux_shuffle：开启aux打乱验证，默认关闭，不影响原有实验。
+--aux_shuffle_mode sensor_groups：按传感器组分别打乱，默认推荐。会尽量分别打乱PPG、ICM、BME、T117等组，使每个aux模态与真实spectrum/血糖错位。
+--aux_shuffle_mode rows：整行aux一起打乱，保留同一时刻aux各模态之间的共同状态，但与spectrum/血糖错位。
+--aux_shuffle_mode features：每个aux特征列独立打乱，破坏最彻底，但也会破坏同一传感器内部特征结构。
+--aux_shuffle_seed：固定shuffle随机种子，便于复现实验。
+
+Tao_db aux shuffle推荐命令：
+nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics --aux_shuffle --aux_shuffle_mode sensor_groups --aux_shuffle_seed 20260517 > new_logs/0517_Tao_gated_residual_engineered_auxshuffle_sensor_groups_difflr_diag.log 2>&1 &
+
+Weiyi_db aux shuffle推荐命令：
+nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --db_user Weiyi_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics --aux_shuffle --aux_shuffle_mode sensor_groups --aux_shuffle_seed 20260517 > new_logs/0517_Weiyi_gated_residual_engineered_auxshuffle_sensor_groups_difflr_diag.log 2>&1 &
+
+更彻底的列级打乱可选命令（仅建议在sensor_groups结果不清晰时追加）：
+将上述命令中的 --aux_shuffle_mode sensor_groups 改为 --aux_shuffle_mode features，并相应修改日志名为 auxshuffle_features。
+
+
+加入对于residual的修改，使修改大小量级与spectrum特征的量级一致。

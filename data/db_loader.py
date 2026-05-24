@@ -336,7 +336,8 @@ class DBDataLoader:
         self,
         db_paths: List[str],
         start_ts_utc: Optional[float] = None,
-        end_ts_utc: Optional[float] = None
+        end_ts_utc: Optional[float] = None,
+        include_db_source: bool = False
     ) -> pd.DataFrame:
         """
         从多个数据库文件加载并合并 spectrum 数据
@@ -364,6 +365,8 @@ class DBDataLoader:
                 
             df = self.load_spectrum_from_db(db_path, start_ts_utc, end_ts_utc)
             if not df.empty:
+                if include_db_source:
+                    df['__db_file'] = str(db_path)
                 all_dfs.append(df)
                 print(f"    ✓ {db_path.name}: {len(df)} 条记录")
         
@@ -1069,7 +1072,8 @@ class DBGlucoseDatasetLoader(GlucoseDatasetLoader):
         icm_mode: str = 'raw',
         fusion_config: Optional[dict] = None,
         user_name: Optional[str] = None,
-        config_dir: Optional[Path] = None
+        config_dir: Optional[Path] = None,
+        track_db_file_source: bool = False
     ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]]:
         """
         加载单个 DB 格式实验的数据
@@ -1144,9 +1148,14 @@ class DBGlucoseDatasetLoader(GlucoseDatasetLoader):
             # 1. 加载频谱数据（支持多db文件合并） - 使用 UTC timestamp 查询
             print("  - 加载频谱数据...")
             if len(db_paths) > 1:
-                spectrum_df = self.db_loader.load_spectrum_from_multiple_dbs(db_paths, start_ts_utc, end_ts_utc)
+                spectrum_df = self.db_loader.load_spectrum_from_multiple_dbs(
+                    db_paths, start_ts_utc, end_ts_utc,
+                    include_db_source=track_db_file_source
+                )
             else:
                 spectrum_df = self.db_loader.load_spectrum_from_db(Path(db_paths[0]), start_ts_utc, end_ts_utc)
+                if track_db_file_source:
+                    spectrum_df['__db_file'] = str(Path(db_paths[0]))
             
             if spectrum_df.empty:
                 print(f"  ✗ 未找到频谱数据")
@@ -1355,6 +1364,21 @@ class DBGlucoseDatasetLoader(GlucoseDatasetLoader):
                 'data_source': 'db',  # 标记数据来源
             }
 
+            if track_db_file_source and '__db_file' in spectrum_df.columns:
+                sample_db_files = spectrum_df['__db_file'].astype(str).to_numpy()
+                unique_db_files = []
+                db_file_to_id = {}
+                sample_db_file_ids = np.empty(len(sample_db_files), dtype=np.int32)
+                for i, db_file in enumerate(sample_db_files):
+                    if db_file not in db_file_to_id:
+                        db_file_to_id[db_file] = len(unique_db_files)
+                        unique_db_files.append(db_file)
+                    sample_db_file_ids[i] = db_file_to_id[db_file]
+
+                metadata['db_file_paths'] = unique_db_files
+                metadata['db_file_names'] = [Path(p).name for p in unique_db_files]
+                metadata['sample_db_file_ids'] = sample_db_file_ids
+
             # 主动释放中间DataFrame引用，降低分实验循环中的瞬时内存峰值
             del spectrum_df, glucose_df
             
@@ -1439,6 +1463,8 @@ class DBGlucoseDatasetLoader(GlucoseDatasetLoader):
             experiments = filtered_experiments
             print(f"  过滤后: {len(experiments)} / {original_count} 个实验")
         
+        track_db_file_source = bool(fusion_config.get('track_db_file_source', False)) if fusion_config else False
+
         print(f"找到 {len(experiments)} 个实验")
         
         all_features_list = []
@@ -1460,7 +1486,8 @@ class DBGlucoseDatasetLoader(GlucoseDatasetLoader):
                 smooth_config=smooth_config,
                 icm_mode=icm_mode,
                 fusion_config=fusion_config,
-                user_name=user_name
+                user_name=user_name,
+                track_db_file_source=track_db_file_source
             )
             
             if result is not None:

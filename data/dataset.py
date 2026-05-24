@@ -1178,10 +1178,69 @@ def split_data_max_day_train_min_day_test(data, labels, metadata_list, experimen
     return train_data, val_data, test_data, train_labels, val_labels, test_labels, train_indices, val_indices, test_indices
 
 
+def split_data_by_db_file_temporal_80_20(data, labels, timestamps, db_file_indices, db_file_names=None):
+    """
+    按每个源 .db 文件内部时间顺序划分:
+    - 每个 .db 的前80%时间戳样本进入训练集
+    - 每个 .db 的后20%时间戳样本进入测试集
+    - 不使用验证集
+    """
+    if timestamps is None or db_file_indices is None:
+        raise ValueError("db_file_temporal_80_20 需要 timestamps 和 db_file_indices 参数")
+
+    n_samples = len(data)
+    if n_samples == 0:
+        raise ValueError("空数据集无法划分")
+    if len(timestamps) != n_samples or len(db_file_indices) != n_samples:
+        raise ValueError(
+            "db_file_temporal_80_20 输入长度不一致: "
+            f"data={n_samples}, timestamps={len(timestamps)}, db_file_indices={len(db_file_indices)}"
+        )
+
+    train_indices_parts = []
+    test_indices_parts = []
+    db_file_names = db_file_names or {}
+
+    print("  DB文件时间顺序80/20划分详情:")
+    for db_id in np.unique(db_file_indices):
+        db_sample_indices = np.where(db_file_indices == db_id)[0]
+        if len(db_sample_indices) < 2:
+            raise ValueError(f"DB文件 {db_file_names.get(int(db_id), db_id)} 样本数不足2，无法80/20划分")
+
+        sort_order = np.argsort(timestamps[db_sample_indices])
+        sorted_indices = db_sample_indices[sort_order]
+        cut = int(len(sorted_indices) * 0.8)
+        cut = max(1, min(cut, len(sorted_indices) - 1))
+
+        train_part = sorted_indices[:cut]
+        test_part = sorted_indices[cut:]
+        train_indices_parts.append(train_part)
+        test_indices_parts.append(test_part)
+
+        db_name = db_file_names.get(int(db_id), f"db_file_{int(db_id)}")
+        print(f"    - {db_name}: total={len(sorted_indices)}, train={len(train_part)}, test={len(test_part)}")
+
+    train_indices = np.concatenate(train_indices_parts).astype(int)
+    test_indices = np.concatenate(test_indices_parts).astype(int)
+    val_indices = np.array([], dtype=int)
+
+    train_indices.sort()
+    test_indices.sort()
+
+    train_data = data[train_indices]
+    train_labels = labels[train_indices]
+    val_data = data[:0]
+    val_labels = labels[:0]
+    test_data = data[test_indices]
+    test_labels = labels[test_indices]
+
+    return train_data, val_data, test_data, train_labels, val_labels, test_labels, train_indices, val_indices, test_indices
+
+
 def split_data(data, labels, metadata_list=None, strategy='random', 
                train_ratio=0.7, val_ratio=0.15, test_ratio=0.15, random_state=42,
                n_splits=10, return_indices=False, experiment_indices=None,
-               date_train_days=None):
+               date_train_days=None, timestamps=None, db_file_indices=None, db_file_names=None):
     """
     统一的数据划分接口，支持多种划分策略
     
@@ -1199,6 +1258,7 @@ def split_data(data, labels, metadata_list=None, strategy='random',
             - 'max_day_train_min_day_test': 最多样本日期训练，最少样本日期测试（单日训练快速对照）
             - 'alternating': 交叉时序划分（奇数段训练，偶数段测试）
             - 'multi_user_independent': 多用户各自独立划分后合并训练集
+            - 'db_file_temporal_80_20': 每个DB文件内按时间前80%训练、后20%测试
             - 'tao_db_label_shuffle_debug': Tao_db专用debug策略（在load_and_preprocess_data中处理）
         train_ratio: 训练集比例
         val_ratio: 验证集比例
@@ -1277,11 +1337,16 @@ def split_data(data, labels, metadata_list=None, strategy='random',
     elif strategy == 'multi_user_independent':
         raise ValueError("split_data 不直接支持 multi_user_independent，请在 load_and_preprocess_data 中使用该策略")
 
+    elif strategy == 'db_file_temporal_80_20':
+        result = split_data_by_db_file_temporal_80_20(
+            data, labels, timestamps, db_file_indices, db_file_names=db_file_names
+        )
+
     elif strategy == 'tao_db_label_shuffle_debug':
         raise ValueError("split_data 不直接支持 tao_db_label_shuffle_debug，请在 load_and_preprocess_data 中使用该策略")
     
     else:
-        raise ValueError(f"不支持的划分策略: {strategy}. 可选: random, temporal, stratified, experiment, date, date_random, max_day_train_min_day_test, alternating, hybrid_alternating, cross_user, multi_user_independent, tao_db_label_shuffle_debug")
+        raise ValueError(f"不支持的划分策略: {strategy}. 可选: random, temporal, stratified, experiment, date, date_random, max_day_train_min_day_test, alternating, hybrid_alternating, cross_user, multi_user_independent, db_file_temporal_80_20, tao_db_label_shuffle_debug")
     
     # 所有策略现在都返回9个值（包括indices）
     if return_indices:
@@ -1417,7 +1482,8 @@ def create_ar_dataloaders(train_data, val_data, test_data,
     return train_loader, val_loader, test_loader
 
 
-def create_window_data(features, labels, timestamps, experiment_indices, window_size, padding_mode='drop'):
+def create_window_data(features, labels, timestamps, experiment_indices, window_size, padding_mode='drop',
+                       return_source_indices=False):
     """
     创建窗口数据：使用过去window_size个时间步的数据预测当前血糖
     重要：窗口不会跨越不同的实验组
@@ -1439,6 +1505,7 @@ def create_window_data(features, labels, timestamps, experiment_indices, window_
         window_labels: shape (n_valid_samples,) - 对应当前时刻的血糖值
         window_timestamps: shape (n_valid_samples,) - 对应当前时刻的时间戳
         window_experiment_indices: shape (n_valid_samples,) - 对应的实验索引
+        window_source_indices: shape (n_valid_samples,) - 对应原始2D样本索引（return_source_indices=True时返回）
     """
     n_samples, n_features = features.shape
 
@@ -1461,6 +1528,7 @@ def create_window_data(features, labels, timestamps, experiment_indices, window_
     window_labels = np.empty((expected_windows,), dtype=np.float32)
     window_timestamps = np.empty((expected_windows,), dtype=np.float64)
     window_experiment_indices = np.empty((expected_windows,), dtype=np.int32)
+    window_source_indices = np.empty((expected_windows,), dtype=np.int64) if return_source_indices else None
 
     estimated_bytes = expected_windows * window_size * n_features * 4
     
@@ -1539,6 +1607,8 @@ def create_window_data(features, labels, timestamps, experiment_indices, window_
             window_labels[write_idx] = current_label
             window_timestamps[write_idx] = current_timestamp
             window_experiment_indices[write_idx] = exp_id
+            if return_source_indices:
+                window_source_indices[write_idx] = global_current_index
             write_idx += 1
 
     # 实际样本数可能因为跳过短实验小于预估，做一次裁剪
@@ -1547,6 +1617,8 @@ def create_window_data(features, labels, timestamps, experiment_indices, window_
         window_labels = window_labels[:write_idx]
         window_timestamps = window_timestamps[:write_idx]
         window_experiment_indices = window_experiment_indices[:write_idx]
+        if return_source_indices:
+            window_source_indices = window_source_indices[:write_idx]
     
     # 打印统计信息
     if total_dropped > 0:
@@ -1556,6 +1628,8 @@ def create_window_data(features, labels, timestamps, experiment_indices, window_
     print(f"    ✓ 最终窗口样本数: {len(window_features)}")
     print(f"    ✓ 数据大小: {window_features.nbytes / 1e9:.2f} GB")
     
+    if return_source_indices:
+        return window_features, window_labels, window_timestamps, window_experiment_indices, window_source_indices
     return window_features, window_labels, window_timestamps, window_experiment_indices
 
 
@@ -1617,7 +1691,8 @@ def create_window_sample_indices(experiment_indices, window_size, padding_mode='
 
 
 def create_time_window_data(features, labels, timestamps, experiment_indices, 
-                            window_duration, downsample_interval=None, padding_mode='drop'):
+                            window_duration, downsample_interval=None, padding_mode='drop',
+                            return_source_indices=False):
     """
     基于时间长度创建窗口数据：使用过去window_duration秒的数据预测当前血糖
     支持在每个窗口内进行下采样
@@ -1641,6 +1716,7 @@ def create_time_window_data(features, labels, timestamps, experiment_indices,
         window_timestamps: shape (n_valid_samples,)
         window_experiment_indices: shape (n_valid_samples,)
         window_glucose_history: shape (n_valid_samples, window_size) - 窗口内下采样后的glucose历史
+        window_source_indices: shape (n_valid_samples,) - 对应原始2D样本索引（return_source_indices=True时返回）
     """
     n_samples, n_features = features.shape
     
@@ -1649,6 +1725,7 @@ def create_time_window_data(features, labels, timestamps, experiment_indices,
     window_timestamps_list = []
     window_experiment_indices_list = []
     window_glucose_history_list = []  # 新增：保存窗口内glucose历史
+    window_source_indices_list = []
     
     unique_experiments = np.unique(experiment_indices)
     
@@ -1752,6 +1829,8 @@ def create_time_window_data(features, labels, timestamps, experiment_indices,
             window_timestamps_list.append(current_time)
             window_experiment_indices_list.append(exp_id)
             window_glucose_history_list.append(glucose_history_window)  # 新增：保存glucose历史
+            if return_source_indices:
+                window_source_indices_list.append(current_global_idx)
             total_windows += 1
     
     if not window_features_list:
@@ -1805,6 +1884,7 @@ def create_time_window_data(features, labels, timestamps, experiment_indices,
     window_timestamps = np.array(window_timestamps_list, dtype=np.float64)  # 时间戳保持float64精度
     window_experiment_indices = np.array(window_experiment_indices_list, dtype=np.int32)
     window_glucose_history = np.array(window_glucose_history_list, dtype=np.float32)
+    window_source_indices = np.array(window_source_indices_list, dtype=np.int64) if return_source_indices else None
     
     # 释放原始列表内存
     del window_features_list, window_labels_list, window_glucose_history_list
@@ -1816,6 +1896,8 @@ def create_time_window_data(features, labels, timestamps, experiment_indices,
     print(f"    ✓ 每个窗口的时间步数: {window_features.shape[1]}")
     print(f"    ✓ 数据大小: {window_features.nbytes / 1e9:.2f} GB")
     
+    if return_source_indices:
+        return window_features, window_labels, window_timestamps, window_experiment_indices, window_glucose_history, window_source_indices
     return window_features, window_labels, window_timestamps, window_experiment_indices, window_glucose_history
 
 
@@ -1923,6 +2005,7 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
     split_strategy = getattr(config, 'split_strategy', 'random')
     cross_user_mode = (split_strategy == 'cross_user')
     multi_user_independent_mode = (split_strategy == 'multi_user_independent')
+    db_file_temporal_mode = (split_strategy == 'db_file_temporal_80_20')
     tao_db_label_shuffle_debug_mode = (split_strategy == 'tao_db_label_shuffle_debug')
     
     # 根据数据源选择不同的加载器
@@ -2053,6 +2136,12 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
             'aux_shuffle_mode': getattr(config, 'aux_shuffle_mode', 'sensor_groups'),
             'aux_shuffle_seed': getattr(config, 'aux_shuffle_seed', 42)
         }
+    if db_file_temporal_mode:
+        if data_source != 'db':
+            raise ValueError("split_strategy='db_file_temporal_80_20' 仅支持 data_source='db'")
+        if fusion_config is None:
+            fusion_config = {}
+        fusion_config['track_db_file_source'] = True
     
     # 获取用户实验映射 ⭐ NEW
     user_experiments = getattr(config, 'user_experiments', None)
@@ -2178,6 +2267,8 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
         print(f"  ✓ cross_user模式: train_user={user_names[0]}, predict_user={user_names[1]}")
     elif multi_user_independent_mode:
         print(f"  ✓ multi_user_independent模式: {len(user_names)}个用户将独立切分并合并训练集")
+    elif db_file_temporal_mode:
+        print("  ✓ db_file_temporal_80_20模式: 每个.db文件内前80%训练、后20%测试")
     
     if experiment_filter:
         print(f"  ✓ 已筛选实验: {', '.join(experiment_filter)}")
@@ -2189,8 +2280,57 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
     full_timestamps = timestamps
     full_glucose = labels
     full_experiment_indices = experiment_indices
+    original_db_file_indices = None
+    db_file_id_to_name = {}
+    db_file_id_to_path = {}
+
+    if db_file_temporal_mode:
+        original_db_file_indices = np.empty(len(labels), dtype=np.int32)
+        sample_start = 0
+        next_db_file_id = 0
+        for exp_id, meta in enumerate(metadata_list):
+            n_samples = int(meta.get('n_samples', 0))
+            sample_end = sample_start + n_samples
+            sample_db_ids = meta.get('sample_db_file_ids')
+            db_names = meta.get('db_file_names', [])
+            db_paths = meta.get('db_file_paths', [])
+
+            if sample_db_ids is None:
+                raise ValueError(
+                    "db_file_temporal_80_20 需要DB加载器记录每个样本的源.db文件，"
+                    f"但实验 {meta.get('experiment_name', exp_id)} 缺少 sample_db_file_ids"
+                )
+            if len(sample_db_ids) != n_samples:
+                raise ValueError(
+                    f"实验 {meta.get('experiment_name', exp_id)} 的 sample_db_file_ids 长度不一致: "
+                    f"{len(sample_db_ids)} vs n_samples={n_samples}"
+                )
+
+            local_to_global = {}
+            for local_db_id in np.unique(sample_db_ids):
+                local_db_id_int = int(local_db_id)
+                db_name = db_names[local_db_id_int] if local_db_id_int < len(db_names) else f"db_{local_db_id_int}"
+                db_path = db_paths[local_db_id_int] if local_db_id_int < len(db_paths) else db_name
+                global_db_id = next_db_file_id
+                next_db_file_id += 1
+                local_to_global[local_db_id_int] = global_db_id
+                exp_name = meta.get('experiment_name', f'exp_{exp_id}')
+                db_file_id_to_name[global_db_id] = f"{exp_name}/{db_name}"
+                db_file_id_to_path[global_db_id] = db_path
+
+            for local_db_id, global_db_id in local_to_global.items():
+                mask = (sample_db_ids == local_db_id)
+                original_db_file_indices[sample_start:sample_end][mask] = global_db_id
+
+            sample_start = sample_end
+
+        if sample_start != len(labels):
+            raise ValueError(
+                f"DB文件来源索引构造失败: metadata样本数={sample_start}, labels样本数={len(labels)}"
+            )
 
     window_glucose_history_full = None  # 初始化：用于存储窗口内glucose历史
+    source_sample_indices = None
     
     if mode == 'window':
         if use_time_window:
@@ -2202,12 +2342,17 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
             downsample_interval = getattr(config, 'downsample_interval', 1.0) if downsample_enabled else None
             
             # 创建时间窗口数据（包含窗口内下采样）
-            features, labels, timestamps, experiment_indices, window_glucose_history_full = create_time_window_data(
-                features, labels, timestamps, experiment_indices, 
+            time_window_result = create_time_window_data(
+                features, labels, timestamps, experiment_indices,
                 window_duration=window_duration,
                 downsample_interval=downsample_interval,
-                padding_mode=window_padding
+                padding_mode=window_padding,
+                return_source_indices=db_file_temporal_mode
             )
+            if db_file_temporal_mode:
+                features, labels, timestamps, experiment_indices, window_glucose_history_full, source_sample_indices = time_window_result
+            else:
+                features, labels, timestamps, experiment_indices, window_glucose_history_full = time_window_result
             print(f"    ✓ 时间窗口数据: {features.shape[0]} 个样本, 每个窗口包含 {features.shape[1]} 个时间步, 窗口时长 {window_duration}秒")
         else:
             # 传统窗口模式：基于样本数
@@ -2228,6 +2373,7 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
                 )
                 labels = labels[sample_source_indices]
                 timestamps = timestamps[sample_source_indices]
+                source_sample_indices = sample_source_indices
                 # 仅保留当前时刻特征用于划分与调试；训练时将基于source_indices按需取窗口
                 features = base_features_2d[sample_source_indices]
                 lazy_window_active = True
@@ -2236,12 +2382,27 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
                 if lazy_window_enabled:
                     print("    ℹ️  当前配置不满足懒窗口条件，回退到预展开3D窗口模式")
                 # 创建窗口数据（在每个实验内部分别创建）
-                features, labels, timestamps, experiment_indices = create_window_data(
-                    features, labels, timestamps, experiment_indices, window_size, padding_mode=window_padding
+                window_result = create_window_data(
+                    features, labels, timestamps, experiment_indices, window_size,
+                    padding_mode=window_padding,
+                    return_source_indices=db_file_temporal_mode
                 )
+                if db_file_temporal_mode:
+                    features, labels, timestamps, experiment_indices, source_sample_indices = window_result
+                else:
+                    features, labels, timestamps, experiment_indices = window_result
                 print(f"    ✓ 窗口数据: {features.shape[0]} 个样本, 每个样本包含 {window_size} 个历史时间步")
     else:
         print(f"  - 使用即时模式: 当前spectrum预测当前血糖")
+
+    db_file_indices = None
+    if db_file_temporal_mode:
+        if mode == 'window':
+            if source_sample_indices is None:
+                raise ValueError("db_file_temporal_80_20 无法获取窗口样本对应的原始DB来源索引")
+            db_file_indices = original_db_file_indices[source_sample_indices]
+        else:
+            db_file_indices = original_db_file_indices
     
     # 检查是否使用验证集
     use_val_set = getattr(config, 'use_val_set', True)
@@ -2256,6 +2417,10 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
 
     if split_strategy == 'multi_user_independent' and len(user_names) < 2:
         raise ValueError("split_strategy='multi_user_independent' 需要至少2个用户")
+
+    if split_strategy == 'db_file_temporal_80_20' and use_val_set:
+        print("  - db_file_temporal_80_20策略按每个.db文件前80%/后20%划分，已自动关闭验证集")
+        use_val_set = False
 
     def _make_derangement(n_samples, rng_seed):
         if n_samples < 2:
@@ -2366,6 +2531,34 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
         val_labels = labels[:0]
         test_data = features[test_indices]
         test_labels = labels[test_indices]
+
+        train_timestamps = timestamps[train_indices]
+        val_timestamps = timestamps[:0]
+        test_timestamps = timestamps[test_indices]
+
+        train_exp_indices = experiment_indices[train_indices]
+        val_exp_indices = experiment_indices[:0]
+        test_exp_indices = experiment_indices[test_indices]
+
+    elif split_strategy == 'db_file_temporal_80_20':
+        print("  - 按每个.db文件时间顺序划分（前80%训练，后20%测试）...")
+
+        result = split_data(
+            features, labels,
+            metadata_list=metadata_list,
+            strategy=split_strategy,
+            train_ratio=0.8,
+            val_ratio=0,
+            test_ratio=0.2,
+            random_state=seed,
+            return_indices=True,
+            experiment_indices=experiment_indices,
+            timestamps=timestamps,
+            db_file_indices=db_file_indices,
+            db_file_names=db_file_id_to_name
+        )
+
+        train_data, val_data, test_data, train_labels, val_labels, test_labels, train_indices, val_indices, test_indices = result
 
         train_timestamps = timestamps[train_indices]
         val_timestamps = timestamps[:0]
@@ -2824,6 +3017,9 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
     val_dates_selected = _collect_dates(val_exp_indices if 'val_exp_indices' in locals() else None)
     test_dates_selected = _collect_dates(test_exp_indices if 'test_exp_indices' in locals() else None)
 
+    train_db_file_indices = db_file_indices[train_indices] if db_file_temporal_mode and db_file_indices is not None else None
+    test_db_file_indices = db_file_indices[test_indices] if db_file_temporal_mode and db_file_indices is not None else None
+
     if split_strategy in ['date', 'date_random', 'max_day_train_min_day_test']:
         print("\n日期划分记录:")
         print(f"  训练日期: {train_dates_selected}")
@@ -2839,6 +3035,9 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
         'experiment_indices': train_exp_indices if 'train_exp_indices' in locals() else None,
         'user_names': user_names_list,
         'user_indices': user_indices[train_indices] if user_indices is not None else None,
+        'db_file_indices': train_db_file_indices,
+        'db_file_names': db_file_id_to_name if db_file_temporal_mode else {},
+        'db_file_paths': db_file_id_to_path if db_file_temporal_mode else {},
         'split_indices': train_split_indices_meta,  # 添加原始索引用于gap检测
         'selected_dates': train_dates_selected,
     }
@@ -2850,11 +3049,22 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
         'experiment_indices': test_exp_indices if 'test_exp_indices' in locals() else None,
         'user_names': user_names_list,
         'user_indices': user_indices[test_indices] if user_indices is not None else None,
+        'db_file_indices': test_db_file_indices,
+        'db_file_names': db_file_id_to_name if db_file_temporal_mode else {},
+        'db_file_paths': db_file_id_to_path if db_file_temporal_mode else {},
         'split_indices': test_split_indices_meta,  # 添加原始索引用于gap检测
         'selected_dates': test_dates_selected,
         'train_dates': train_dates_selected,
         'val_dates': val_dates_selected,
     }
+
+    if split_strategy == 'db_file_temporal_80_20' and test_db_file_indices is not None:
+        per_db_file_test_indices = {}
+        for db_id in np.unique(test_db_file_indices):
+            db_id_int = int(db_id)
+            db_name = db_file_id_to_name.get(db_id_int, f"db_file_{db_id_int}")
+            per_db_file_test_indices[db_name] = np.where(test_db_file_indices == db_id)[0]
+        test_metadata['per_db_file_test_indices'] = per_db_file_test_indices
 
     if split_strategy == 'multi_user_independent' and test_metadata.get('user_indices') is not None:
         user_index_to_name = {}
@@ -2879,6 +3089,8 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
         'experiment_indices': full_experiment_indices,
         'user_names': user_names_list,
         'user_indices': user_indices_full,
+        'db_file_names': db_file_id_to_name if db_file_temporal_mode else {},
+        'db_file_paths': db_file_id_to_path if db_file_temporal_mode else {},
     }
     
     if normalize:

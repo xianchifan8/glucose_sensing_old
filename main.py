@@ -150,7 +150,7 @@ def parse_args():
                        choices=['linear', 'cubic', 'pchip', 'akima', 'makima', 'nearest'],
                        help='血糖插值方法（推荐pchip或akima用于CGM低采样率数据）')
     parser.add_argument('--split_strategy', type=str, 
-                       choices=['random', 'temporal', 'stratified', 'experiment', 'date', 'date_random', 'max_day_train_min_day_test', 'alternating', 'hybrid_alternating', 'cross_user', 'multi_user_independent', 'tao_db_label_shuffle_debug'],
+                       choices=['random', 'temporal', 'stratified', 'experiment', 'date', 'date_random', 'max_day_train_min_day_test', 'alternating', 'hybrid_alternating', 'cross_user', 'multi_user_independent', 'db_file_temporal_80_20', 'tao_db_label_shuffle_debug'],
                        help='数据集划分策略: random(随机), temporal(时序), stratified(分层), experiment(按实验), date(按日期时序), date_random(按日期随机抽取训练日, 支持指定单用户如--db_user Tao_db), max_day_train_min_day_test(最多日期训练最少日期测试), alternating(交叉时序), hybrid_alternating(混合交叉), cross_user(跨用户训练测试), multi_user_independent(多用户独立划分并分别测试), tao_db_label_shuffle_debug(Tao_db专用debug: 打乱频谱与血糖标签对应关系后随机划分，并强制仅用spectrum单模态)')
     parser.add_argument('--date_user', type=str, default=None,
                        help='date/date_random策略下指定单用户别名: DB模式如 Tao_db, BIN模式如 Tao')
@@ -433,6 +433,7 @@ def _run_single_experiment(args, config, device, run_idx=1, total_runs=1, result
             'hybrid_alternating': 'halt',
             'cross_user': 'xusr',
             'multi_user_independent': 'mui',
+            'db_file_temporal_80_20': 'db8020',
             'tao_db_label_shuffle_debug': 'tdbg'
         }.get(config.data.split_strategy, config.data.split_strategy[:3])
         
@@ -740,6 +741,78 @@ def _run_single_experiment(args, config, device, run_idx=1, total_runs=1, result
                     per_user_log[f"per_user/{safe_user_name}_mape"] = mape
                     per_user_log[f"per_user/{safe_user_name}_samples"] = n_samples
                 wandb.log(per_user_log)
+
+            print("="*70)
+
+    # db_file_temporal_80_20策略: 对每个.db文件的后20%测试集单独评估
+    if config.data.split_strategy == 'db_file_temporal_80_20':
+        per_db_file_test_indices = test_metadata.get('per_db_file_test_indices', {}) if test_metadata else {}
+        if per_db_file_test_indices:
+            from torch.utils.data import DataLoader, Subset
+
+            print("\n" + "="*70)
+            print("按DB文件独立测试结果")
+            print("="*70)
+
+            def _slice_test_metadata_by_local_indices(metadata, local_indices):
+                """按test_loader中的局部索引切分metadata，保持可视化与统计一致。"""
+                sliced = {}
+                sample_keys = {'timestamps', 'experiment_indices', 'user_indices', 'split_indices', 'db_file_indices'}
+                n_test_samples = len(metadata.get('timestamps', []))
+
+                for key, value in metadata.items():
+                    if key == 'per_db_file_test_indices':
+                        continue
+
+                    if key in sample_keys and isinstance(value, np.ndarray) and len(value) == n_test_samples:
+                        sliced[key] = value[local_indices]
+                    else:
+                        sliced[key] = value
+
+                return sliced
+
+            per_db_results = []
+            for db_file_name, local_indices in per_db_file_test_indices.items():
+                if len(local_indices) == 0:
+                    continue
+
+                db_dataset = Subset(test_loader.dataset, local_indices.tolist())
+                db_test_loader = DataLoader(
+                    db_dataset,
+                    batch_size=config.training.batch_size,
+                    shuffle=False,
+                    num_workers=config.data.num_workers,
+                    pin_memory=config.data.pin_memory
+                )
+
+                db_test_metadata = _slice_test_metadata_by_local_indices(test_metadata, local_indices)
+                safe_db_name = str(db_file_name).replace(os.sep, '_').replace('/', '_').replace(' ', '_')
+                db_viz_dir = os.path.join(results_dir, f"db_file_{safe_db_name}")
+
+                db_test_loss, db_test_mae, db_test_rmse, db_test_mape = trainer.test(
+                    db_test_loader,
+                    test_metadata=db_test_metadata,
+                    full_metadata=full_metadata,
+                    viz_dir=db_viz_dir,
+                    metric_prefix=f"final_test_db_{safe_db_name}",
+                    log_to_summary=False
+                )
+
+                per_db_results.append((db_file_name, len(local_indices), db_test_loss, db_test_mae, db_test_rmse, db_test_mape))
+
+            print("\n按DB文件测试指标汇总:")
+            for db_file_name, n_samples, loss, mae, rmse, mape in per_db_results:
+                print(f"  - {db_file_name}: samples={n_samples}, loss={loss:.4f}, MAE={mae:.4f}, RMSE={rmse:.4f}, MAPE={mape:.2f}%")
+
+            if use_wandb and per_db_results:
+                per_db_log = {}
+                for db_file_name, n_samples, _, mae, rmse, mape in per_db_results:
+                    safe_db_name = str(db_file_name).replace(os.sep, '_').replace('/', '_').replace(' ', '_')
+                    per_db_log[f"per_db_file/{safe_db_name}_mae"] = mae
+                    per_db_log[f"per_db_file/{safe_db_name}_rmse"] = rmse
+                    per_db_log[f"per_db_file/{safe_db_name}_mape"] = mape
+                    per_db_log[f"per_db_file/{safe_db_name}_samples"] = n_samples
+                wandb.log(per_db_log)
 
             print("="*70)
     
