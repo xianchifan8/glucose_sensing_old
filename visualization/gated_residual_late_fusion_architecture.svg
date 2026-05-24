@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7fafc"/>
+      <stop offset="100%" stop-color="#eef6f3"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#1f2937" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#3f4a56"/>
+    </marker>
+    <style>
+      .title { font: 800 36px "Inter", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #17202a; }
+      .subtitle { font: 500 18px "Inter", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #5b6673; }
+      .label { font: 800 20px "Inter", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #1f2933; }
+      .small { font: 500 15px "Inter", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #4b5563; }
+      .tiny { font: 500 13px "Inter", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #667085; }
+      .formula { font: 700 17px "JetBrains Mono", "SFMono-Regular", Consolas, monospace; fill: #27313f; }
+      .box { stroke: rgba(31, 41, 55, 0.18); stroke-width: 1.4; rx: 18; filter: url(#shadow); }
+      .arrow { stroke: #3f4a56; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .soft { stroke: #7a8794; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <text x="70" y="72" class="title">Gated Residual 多模态血糖预测结构</text>
+  <text x="70" y="108" class="subtitle">核心思想：频谱特征作为主干预测依据，PPG/ICM 辅助模态只生成“有界、门控”的残差修正，避免直接覆盖主模态。</text>
+
+  <rect x="60" y="140" width="1480" height="660" rx="28" fill="#ffffff" opacity="0.84" stroke="#d8dee7"/>
+
+  <!-- Main branch -->
+  <rect x="110" y="245" width="270" height="120" class="box" fill="#d9ecff"/>
+  <text x="138" y="285" class="label">Spectrum 输入</text>
+  <text x="138" y="315" class="small">频谱窗口 / 单点频谱</text>
+  <text x="138" y="342" class="tiny">x_s</text>
+
+  <rect x="470" y="245" width="290" height="120" class="box" fill="#eaf4ff"/>
+  <text x="498" y="285" class="label">频谱特征编码器</text>
+  <text x="498" y="315" class="small">base_model.extract_features</text>
+  <text x="498" y="342" class="formula">z_s ∈ R^d</text>
+
+  <!-- Aux branch -->
+  <rect x="110" y="510" width="270" height="120" class="box" fill="#dff6ec"/>
+  <text x="138" y="550" class="label">PPG / ICM 输入</text>
+  <text x="138" y="580" class="small">动态状态 / 运动质量特征</text>
+  <text x="138" y="607" class="tiny">x_aux</text>
+
+  <rect x="470" y="510" width="290" height="120" class="box" fill="#edf9f3"/>
+  <text x="498" y="550" class="label">AuxFeatureEncoder</text>
+  <text x="498" y="580" class="small">Linear → LN → ReLU → Dropout</text>
+  <text x="498" y="607" class="formula">a ∈ R^k</text>
+
+  <!-- Fusion core -->
+  <rect x="835" y="318" width="250" height="100" class="box" fill="#ffffff"/>
+  <text x="862" y="355" class="label">条件拼接</text>
+  <text x="862" y="386" class="formula">u = [z_s ; a]</text>
+
+  <rect x="845" y="490" width="220" height="125" class="box" fill="#e7f7ef"/>
+  <text x="874" y="528" class="label">Residual 分支</text>
+  <text x="874" y="558" class="small">MLP + LayerNorm</text>
+  <text x="874" y="588" class="formula">r = tanh(f_r(u))</text>
+
+  <rect x="1125" y="490" width="220" height="125" class="box" fill="#e7f7ef"/>
+  <text x="1154" y="528" class="label">Gate 分支</text>
+  <text x="1154" y="558" class="small">MLP + LayerNorm</text>
+  <text x="1154" y="588" class="formula">g = sigmoid(f_g(u))</text>
+
+  <rect x="1130" y="285" width="210" height="100" class="box" fill="#f3edff"/>
+  <text x="1160" y="322" class="label">有界 Scale</text>
+  <text x="1160" y="352" class="formula">α ∈ [min, 1]</text>
+
+  <rect x="930" y="680" width="330" height="86" class="box" fill="#f0fbf6"/>
+  <text x="960" y="715" class="label">门控残差修正</text>
+  <text x="960" y="746" class="formula">z' = z_s + α · g ⊙ r</text>
+
+  <!-- Head -->
+  <rect x="1345" y="450" width="160" height="130" class="box" fill="#efe5ff"/>
+  <text x="1372" y="494" class="label">预测头</text>
+  <text x="1372" y="524" class="small">MLP Head</text>
+  <text x="1372" y="552" class="formula">ŷ</text>
+
+  <!-- Arrows -->
+  <path class="arrow" d="M380 305 C410 305, 438 305, 470 305"/>
+  <path class="arrow" d="M380 570 C410 570, 438 570, 470 570"/>
+  <path class="arrow" d="M760 305 C800 310, 810 348, 835 356"/>
+  <path class="arrow" d="M760 570 C800 540, 818 390, 835 374"/>
+  <path class="arrow" d="M960 418 L960 490"/>
+  <path class="arrow" d="M1022 418 C1110 430, 1195 442, 1235 490"/>
+  <path class="soft" d="M1235 385 L1235 490"/>
+  <path class="arrow" d="M955 615 C955 650, 1015 660, 1058 680"/>
+  <path class="arrow" d="M1235 615 C1235 650, 1175 660, 1132 680"/>
+  <path class="soft" d="M1235 385 C1290 440, 1245 640, 1195 680"/>
+  <path class="arrow" d="M760 305 C790 420, 805 700, 930 723"/>
+  <path class="arrow" d="M1260 723 C1320 690, 1350 604, 1378 580"/>
+
+  <!-- Bottom notes -->
+  <rect x="160" y="820" width="1280" height="46" rx="14" fill="#ffffff" opacity="0.78" stroke="#d8dee7"/>
+  <text x="188" y="850" class="small">差异学习率可选：base_model 使用主 lr；AuxEncoder / Residual / Gate / Head 使用 fusion_lr；residual_scale 可单独使用 scale_lr。</text>
+</svg>

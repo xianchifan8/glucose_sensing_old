@@ -1,0 +1,18 @@
+{
+  "lr": {
+    "_type": "loguniform",
+    "_value": [0.0003, 0.003]
+  },
+  "dropout": {
+    "_type": "uniform",
+    "_value": [0.08, 0.25]
+  },
+  "weight_decay": {
+    "_type": "loguniform",
+    "_value": [0.0001, 0.003]
+  },
+  "huber_delta": {
+    "_type": "uniform",
+    "_value": [0.5, 1.2]
+  }
+}

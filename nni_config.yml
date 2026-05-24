@@ -1,0 +1,17 @@
+experimentName: Tao_db_TCN_late_fusion_tuning
+trialCommand: python nni_trial.py --target_metric mae --target_scope test
+trialCodeDirectory: .
+searchSpaceFile: nni_search_space.json
+
+trialConcurrency: 1
+maxTrialNumber: 20
+
+tuner:
+  name: TPE
+  classArgs:
+    optimize_mode: minimize
+
+trainingService:
+  platform: local
+
+experimentWorkingDirectory: ./nni-experiments
