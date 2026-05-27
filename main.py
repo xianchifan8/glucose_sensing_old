@@ -56,7 +56,7 @@ def parse_args():
                        help='差异学习率开启时，residual_scale单独学习率；不设则使用fusion_lr')
     
     # 模型参数
-    parser.add_argument('--model', type=str, choices=['MLP', 'CNN', 'Transformer', 'TCN'],
+    parser.add_argument('--model', type=str, choices=['MLP', 'CNN', 'Transformer', 'TCN', 'RF_CNN'],
                        help='模型架构')
     parser.add_argument('--hidden_size', type=int, help='隐藏层大小')
     parser.add_argument('--num_layers', type=int, help='模型层数（TCN的TemporalBlock层数）')
@@ -166,8 +166,8 @@ def parse_args():
                        help='date_random策略重复实验次数，建议5-10')
     parser.add_argument('--date_train_days', type=int, default=None,
                        help='date/date_random策略下训练集使用的日期数（不指定则按train_split推断）')
-    parser.add_argument('--mode', type=str, choices=['instant', 'window'],
-                       default='instant', help='预测模式: instant(当前spectrum预测当前血糖) 或 window(历史窗口预测当前血糖)')
+    parser.add_argument('--mode', type=str, choices=['instant', 'window', 'rf_image'],
+                       default='instant', help='预测模式: instant(当前spectrum预测当前血糖), window(历史窗口预测当前血糖), rf_image(射频时间-频谱图预测窗口平均血糖)')
     parser.add_argument('--window_size', type=int, default=10,
                        help='窗口模式下使用的历史时间步数（样本数）')
     parser.add_argument('--window_duration', type=float, default=None,
@@ -176,6 +176,10 @@ def parse_args():
                        choices=['drop', 'zero', 'repeat', 'edge'],
                        default='drop',
                        help='窗口模式下前期样本处理: drop(丢弃,默认), zero(零填充), repeat(重复第一个样本), edge(边缘填充)')
+    parser.add_argument('--rf_image_minutes', type=float, default=5.0,
+                       help='rf_image模式下每张时间-频谱图覆盖的历史时长（分钟，默认5分钟）')
+    parser.add_argument('--rf_image_time_bins', type=int, default=300,
+                       help='rf_image模式下二维图的时间采样点数（默认300）')
     
     # 数据下采样参数
     parser.add_argument('--downsample', action='store_true', 
@@ -310,6 +314,8 @@ def _run_single_experiment(args, config, device, run_idx=1, total_runs=1, result
                 name_parts.append(f"win_wd{int(config.data.window_duration)}")
             else:
                 name_parts.append(f"win_ws{config.data.window_size}")
+        elif config.data.mode == 'rf_image':
+            name_parts.append(f"rfimg_{config.data.rf_image_minutes:g}min_t{config.data.rf_image_time_bins}")
         else:
             name_parts.append("inst")
         
@@ -548,6 +554,12 @@ def _run_single_experiment(args, config, device, run_idx=1, total_runs=1, result
             print(f"✓ 输入特征维度: {config.model.input_size}")
             if config.data.data_fusion:
                 print(f"✓ 数据融合阶段: 数据层(Early - 频谱+aux→SpectralCNN)")
+        elif config.data.mode == 'rf_image':
+            config.model.input_size = sample_batch[0].shape[-1]
+            print(
+                f"✓ RF时间-频谱图输入: batch形状={tuple(sample_batch[0].shape)}, "
+                f"时间bins={sample_batch[0].shape[-2]}, 频谱维度={config.model.input_size}"
+            )
         else:  # window mode
             config.model.input_size = sample_batch[0].shape[2]  # (batch, window_size, features)
             print(f"✓ 输入特征维度: {config.model.input_size}, 窗口大小: {sample_batch[0].shape[1]}")
@@ -561,6 +573,8 @@ def _run_single_experiment(args, config, device, run_idx=1, total_runs=1, result
     
     # 根据模式选择基础模型
     if config.data.mode == 'instant':
+        base_model = create_model(config.model)
+    elif config.data.mode == 'rf_image':
         base_model = create_model(config.model)
     else:  # window mode
         from Model.window import create_window_model

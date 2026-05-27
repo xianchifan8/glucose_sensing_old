@@ -182,6 +182,60 @@ class GlucoseTransformer(nn.Module):
         return x.squeeze(-1)  # (batch_size,)
 
 
+class RFImageCNN(nn.Module):
+    """
+    2D CNN for RF time-frequency images.
+
+    Input shape: (batch_size, 1, time_bins, freq_bins)
+    Output: mean glucose for the RF image window.
+    """
+    def __init__(self, input_size=1001, hidden_size=256, dropout=0.5,
+                 task_type='regression'):
+        super(RFImageCNN, self).__init__()
+        self.task_type = task_type
+
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2),
+
+            nn.Conv2d(32, 64, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2),
+
+            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2),
+
+            nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+
+        self.head = nn.Sequential(
+            nn.Flatten(),
+            nn.Dropout(dropout),
+            nn.Linear(256, hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, 1),
+        )
+
+        if task_type != 'regression':
+            raise ValueError(f"任务类型 {task_type} 暂不支持")
+
+    def forward(self, x):
+        if x.dim() == 3:
+            x = x.unsqueeze(1)
+        x = self.features(x)
+        x = self.head(x)
+        return x.squeeze(-1)
+
+
 def create_model(config):
     """
     根据配置创建模型
@@ -213,6 +267,9 @@ def create_model(config):
         kwargs['num_layers'] = config.num_layers
         kwargs['nhead'] = 8  # 可以添加到config中
         return GlucoseTransformer(**kwargs)
+
+    elif arch == 'RF_CNN':
+        return RFImageCNN(**kwargs)
     
     else:
         raise ValueError(f"不支持的模型架构: {arch}")
@@ -234,6 +291,7 @@ def get_model(model_name, **kwargs):
         'mlp': GlucoseMLP,
         'cnn': GlucoseCNN,
         'transformer': GlucoseTransformer,
+        'rf_cnn': RFImageCNN,
     }
     
     model_name = model_name.lower()
@@ -241,4 +299,3 @@ def get_model(model_name, **kwargs):
         raise ValueError(f"不支持的模型: {model_name}. 可选: {list(model_dict.keys())}")
     
     return model_dict[model_name](**kwargs)
-

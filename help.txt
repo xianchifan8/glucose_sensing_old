@@ -481,3 +481,26 @@ nohup /opt/anaconda3/envs/glucose_sensing/bin/python main.py --data_source db --
 nohup python main.py --data_source db --db_user Tao_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy db_file_temporal_80_20 --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > new_logs/0524_Tao_difflr_new_split_test.log 2>&1 &
 
 nohup python main.py --data_source db --db_user Weiyi_db --model TCN --mode window --window_size 50 --data_fusion --fusion_stage late --fusion_method_late gated_residual --aux_feature_mode engineered --split_strategy db_file_temporal_80_20 --no_val --train_split 0.8 --test_split 0.2 --normalize --epochs 20 --lr 0.0006632726129567153 --dropout 0.11126664193792407 --batch_size 32 --no_wandb --weight_decay 0.0002754468224664347 --loss Huber --huber_delta 0.9138059238311189 --gated_residual_scale_mode sigmoid --gated_residual_min_scale 0.02 --gated_residual_differential_lr --gated_residual_fusion_lr 0.0003 --gated_residual_scale_lr 0.00005 --fusion_diagnostics > new_logs/0524_Weiyi_difflr_new_split_test.log 2>&1 &
+
+简单CNN尝试
+python main.py \
+  --data_source db \
+  --db_user Tao_db \
+  --split_strategy random \
+  --no_val \
+  --train_split 0.8 \
+  --test_split 0.2 \
+  --mode rf_image \
+  --model RF_CNN \
+  --rf_image_minutes 5 \
+  --rf_image_time_bins 300 \
+  --normalize \
+  --epochs 30 \
+  --lr 0.001 \
+  --batch_size 16 \
+  --dropout 0.2 \
+  --loss Huber \
+  --huber_delta 0.8 \
+  --no_wandb
+
+nohup python main.py --data_source db --db_user Tao_db --split_strategy random --no_val --train_split 0.8 --test_split 0.2 --mode rf_image --model RF_CNN --rf_image_minutes 5 --rf_image_time_bins 300 --normalize --epochs 30 --lr 0.001 --batch_size 16 --dropout 0.2 --loss Huber --huber_delta 0.8 --no_wandb > new_logs/0527_Tao_Image_CNN_test.log 2>&1 &

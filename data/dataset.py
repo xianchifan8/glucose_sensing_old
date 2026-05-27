@@ -157,6 +157,87 @@ class LazyWindowLateFusionDataset(Dataset):
         return spectrum, aux, label
 
 
+class LazyRFImageDataset(Dataset):
+    """
+    按需构造射频时间-频谱图。
+
+    每个样本使用同一实验内 [current_time - duration, current_time] 的RF频谱，
+    插值/重采样到固定 time_bins，返回形状为 (1, time_bins, n_spectrum_features) 的二维图。
+    标签是同一时间窗口内血糖插值标签的平均值。
+    """
+    def __init__(self, base_features, timestamps, current_indices, start_indices, labels,
+                 duration_seconds, time_bins=300, n_spectrum_features=1001, transform=None):
+        self.base_features = np.asarray(base_features, dtype=np.float32)
+        self.timestamps = np.asarray(timestamps, dtype=np.float64)
+        self.current_indices = np.asarray(current_indices, dtype=np.int64)
+        self.start_indices = np.asarray(start_indices, dtype=np.int64)
+        self.labels = torch.from_numpy(np.asarray(labels, dtype=np.float32))
+        self.duration_seconds = float(duration_seconds)
+        self.time_bins = int(time_bins)
+        self.n_spectrum = int(n_spectrum_features)
+        self.transform = transform
+
+        if len(self.current_indices) != len(self.start_indices) or len(self.current_indices) != len(self.labels):
+            raise ValueError(
+                f"LazyRFImageDataset长度不一致: current={len(self.current_indices)}, "
+                f"start={len(self.start_indices)}, labels={len(self.labels)}"
+            )
+        if self.duration_seconds <= 0:
+            raise ValueError(f"duration_seconds必须为正数，当前为 {self.duration_seconds}")
+        if self.time_bins < 2:
+            raise ValueError(f"time_bins必须 >= 2，当前为 {self.time_bins}")
+        if self.n_spectrum <= 0 or self.n_spectrum > self.base_features.shape[1]:
+            raise ValueError(
+                f"n_spectrum_features非法: {self.n_spectrum}, 总特征维度: {self.base_features.shape[1]}"
+            )
+
+    def __len__(self):
+        return len(self.current_indices)
+
+    def __getitem__(self, idx):
+        current_idx = int(self.current_indices[idx])
+        start_idx = int(self.start_indices[idx])
+        if start_idx > current_idx:
+            raise IndexError(f"RF图窗口索引非法: start={start_idx}, current={current_idx}")
+
+        window_features = self.base_features[start_idx:current_idx + 1, :self.n_spectrum]
+        window_times = self.timestamps[start_idx:current_idx + 1]
+        current_time = self.timestamps[current_idx]
+        target_times = np.linspace(
+            current_time - self.duration_seconds,
+            current_time,
+            self.time_bins,
+            dtype=np.float64
+        )
+
+        image = self._interp_window(window_times, window_features, target_times)
+        sample = torch.from_numpy(image).unsqueeze(0)  # (1, time_bins, freq_bins)
+        label = self.labels[idx]
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample, label
+
+    @staticmethod
+    def _interp_window(window_times, window_features, target_times):
+        if len(window_times) == 1:
+            return np.repeat(window_features, len(target_times), axis=0).astype(np.float32, copy=False)
+
+        right = np.searchsorted(window_times, target_times, side='left')
+        right = np.clip(right, 1, len(window_times) - 1)
+        left = right - 1
+
+        t0 = window_times[left]
+        t1 = window_times[right]
+        denom = np.maximum(t1 - t0, 1e-6)
+        weight = ((target_times - t0) / denom).astype(np.float32)[:, None]
+        weight = np.clip(weight, 0.0, 1.0)
+
+        image = window_features[left] * (1.0 - weight) + window_features[right] * weight
+        return image.astype(np.float32, copy=False)
+
+
 class LateFusionDataset(Dataset):
     """
     Late Fusion 数据集类
@@ -1690,6 +1771,79 @@ def create_window_sample_indices(experiment_indices, window_size, padding_mode='
     return current_indices, window_experiment_indices
 
 
+def create_rf_image_sample_indices(labels, timestamps, experiment_indices, duration_seconds, min_samples=2):
+    """
+    为rf_image模式创建样本索引。
+
+    每个有效样本对应一个当前时刻current_idx，输入为同一实验内
+    [timestamp[current_idx] - duration_seconds, timestamp[current_idx]] 的RF频谱图，
+    标签为该时间段内插值血糖标签的平均值。
+    """
+    labels = np.asarray(labels, dtype=np.float32)
+    timestamps = np.asarray(timestamps, dtype=np.float64)
+    experiment_indices = np.asarray(experiment_indices)
+    duration_seconds = float(duration_seconds)
+    min_samples = int(min_samples)
+
+    if duration_seconds <= 0:
+        raise ValueError(f"duration_seconds必须为正数，当前为 {duration_seconds}")
+
+    current_indices_list = []
+    start_indices_list = []
+    avg_labels_list = []
+    rf_exp_indices_list = []
+
+    unique_experiments = np.unique(experiment_indices)
+    print(f"    在 {len(unique_experiments)} 个实验内部分别创建RF时间-频谱图索引...")
+    print(f"    RF图窗口时长: {duration_seconds / 60:.2f} 分钟")
+
+    total_dropped = 0
+    for exp_id in unique_experiments:
+        exp_indices = np.where(experiment_indices == exp_id)[0]
+        if len(exp_indices) < min_samples:
+            total_dropped += len(exp_indices)
+            continue
+
+        exp_times = timestamps[exp_indices]
+        order = np.argsort(exp_times)
+        exp_indices = exp_indices[order]
+        exp_times = exp_times[order]
+
+        for local_i, current_idx in enumerate(exp_indices):
+            current_time = exp_times[local_i]
+            window_start_time = current_time - duration_seconds
+            if exp_times[0] > window_start_time:
+                total_dropped += 1
+                continue
+
+            start_local = int(np.searchsorted(exp_times, window_start_time, side='left'))
+            if local_i - start_local + 1 < min_samples:
+                total_dropped += 1
+                continue
+
+            window_global_indices = exp_indices[start_local:local_i + 1]
+            current_indices_list.append(int(current_idx))
+            start_indices_list.append(int(exp_indices[start_local]))
+            avg_labels_list.append(float(np.mean(labels[window_global_indices])))
+            rf_exp_indices_list.append(int(exp_id))
+
+    if not current_indices_list:
+        raise ValueError(
+            f"无法创建RF时间-频谱图数据: 所有实验都不足 {duration_seconds / 60:.2f} 分钟窗口"
+        )
+
+    current_indices = np.asarray(current_indices_list, dtype=np.int64)
+    start_indices = np.asarray(start_indices_list, dtype=np.int64)
+    avg_labels = np.asarray(avg_labels_list, dtype=np.float32)
+    rf_experiment_indices = np.asarray(rf_exp_indices_list, dtype=np.int32)
+
+    print(f"    ✓ 丢弃了 {total_dropped} 个窗口时长不足的前期样本")
+    print(f"    ✓ 最终RF图样本数: {len(current_indices)}")
+    print("    ✓ 按需RF图模式：训练时动态构造二维时间-频谱图")
+
+    return current_indices, start_indices, avg_labels, rf_experiment_indices
+
+
 def create_time_window_data(features, labels, timestamps, experiment_indices, 
                             window_duration, downsample_interval=None, padding_mode='drop',
                             return_source_indices=False):
@@ -2122,8 +2276,10 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
     use_late_fusion = data_fusion and fusion_stage == 'late'
     lazy_window_enabled = bool(getattr(config, 'lazy_window', True))
     lazy_window_active = False
+    rf_image_active = False
     base_features_2d = None
     sample_source_indices = None
+    rf_start_sample_indices = None
     
     # 构建fusion_config（包含aux_override等配置）
     fusion_config = None
@@ -2332,7 +2488,36 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
     window_glucose_history_full = None  # 初始化：用于存储窗口内glucose历史
     source_sample_indices = None
     
-    if mode == 'window':
+    if mode == 'rf_image':
+        if use_autoregressive:
+            raise ValueError("rf_image模式暂不支持 autoregressive")
+        if data_fusion:
+            print("  ⚠ rf_image模式仅使用RF spectrum构图，将忽略aux特征参与建图")
+            data_fusion = False
+            config.data_fusion = False
+            use_late_fusion = False
+
+        rf_image_minutes = float(getattr(config, 'rf_image_minutes', 5.0))
+        rf_image_duration = rf_image_minutes * 60.0
+        n_spectrum_features_for_rf = metadata_list[0].get('n_spectrum_features', 1001) if metadata_list else 1001
+
+        print(
+            f"  - 使用RF时间-频谱图模式: duration={rf_image_minutes:.2f}分钟, "
+            f"time_bins={getattr(config, 'rf_image_time_bins', 300)}"
+        )
+        base_features_2d = features
+        sample_source_indices, rf_start_sample_indices, labels, experiment_indices = create_rf_image_sample_indices(
+            labels, timestamps, experiment_indices,
+            duration_seconds=rf_image_duration,
+            min_samples=2
+        )
+        timestamps = timestamps[sample_source_indices]
+        source_sample_indices = sample_source_indices
+        features = base_features_2d[sample_source_indices, :n_spectrum_features_for_rf]
+        rf_image_active = True
+        print(f"    ✓ RF图数据: {features.shape[0]} 个样本, 每个样本训练时构造二维图")
+
+    elif mode == 'window':
         if use_time_window:
             # 时间窗口模式：先创建窗口，再在窗口内下采样
             print(f"  - 使用时间窗口模式: window_duration={window_duration}秒, padding={window_padding}")
@@ -2753,6 +2938,15 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
             train_source_indices_for_norm = sample_source_indices[train_indices]
             _, scaler = loader.normalize_features(base_features_2d[train_source_indices_for_norm], scaler=None, fit=True)
             base_features_2d, _ = loader.normalize_features(base_features_2d, scaler=scaler, fit=False)
+        elif rf_image_active and base_features_2d is not None:
+            print("  - 归一化RF频谱特征 (rf_image模式：仅在spectrum维度上归一化)")
+            n_spectrum_features = metadata_list[0].get('n_spectrum_features', 1001) if metadata_list else 1001
+            train_source_indices_for_norm = sample_source_indices[train_indices]
+            spectrum_train = base_features_2d[train_source_indices_for_norm, :n_spectrum_features]
+            _, scaler = loader.normalize_features(spectrum_train, scaler=None, fit=True)
+            spectrum_all, _ = loader.normalize_features(base_features_2d[:, :n_spectrum_features], scaler=scaler, fit=False)
+            base_features_2d = base_features_2d.copy()
+            base_features_2d[:, :n_spectrum_features] = spectrum_all
         else:
             print("  - 归一化特征 (使用训练集全局均值和标准差)")
             # 用训练集 fit scaler（计算全局均值和标准差）
@@ -2788,7 +2982,66 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
     ar_glucose_history = getattr(config, 'ar_glucose_history', 5)
     ar_glucose_aligned = getattr(config, 'ar_glucose_aligned', True)
     
-    if lazy_window_active and not use_autoregressive:
+    if rf_image_active:
+        print("  - 使用RF时间-频谱图Dataset（按需构造二维图）")
+        rf_time_bins = int(getattr(config, 'rf_image_time_bins', 300))
+        rf_duration_seconds = float(getattr(config, 'rf_image_minutes', 5.0)) * 60.0
+
+        train_source_indices = sample_source_indices[train_indices]
+        test_source_indices = sample_source_indices[test_indices]
+        train_start_indices = rf_start_sample_indices[train_indices]
+        test_start_indices = rf_start_sample_indices[test_indices]
+
+        if use_val_set and len(val_indices) > 0:
+            val_source_indices = sample_source_indices[val_indices]
+            val_start_indices = rf_start_sample_indices[val_indices]
+        else:
+            val_source_indices = np.array([], dtype=np.int64)
+            val_start_indices = np.array([], dtype=np.int64)
+
+        train_dataset = LazyRFImageDataset(
+            base_features_2d, full_timestamps,
+            train_source_indices, train_start_indices, train_labels,
+            duration_seconds=rf_duration_seconds,
+            time_bins=rf_time_bins,
+            n_spectrum_features=n_spectrum_features
+        )
+        test_dataset = LazyRFImageDataset(
+            base_features_2d, full_timestamps,
+            test_source_indices, test_start_indices, test_labels,
+            duration_seconds=rf_duration_seconds,
+            time_bins=rf_time_bins,
+            n_spectrum_features=n_spectrum_features
+        )
+        val_dataset = LazyRFImageDataset(
+            base_features_2d, full_timestamps,
+            val_source_indices, val_start_indices, val_labels,
+            duration_seconds=rf_duration_seconds,
+            time_bins=rf_time_bins,
+            n_spectrum_features=n_spectrum_features
+        ) if use_val_set and len(val_labels) > 0 else None
+
+        train_loader = DataLoader(
+            train_dataset, batch_size=batch_size,
+            shuffle=should_shuffle,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available()
+        )
+        test_loader = DataLoader(
+            test_dataset, batch_size=batch_size,
+            shuffle=False, num_workers=num_workers,
+            pin_memory=torch.cuda.is_available()
+        )
+        if val_dataset is not None:
+            val_loader = DataLoader(
+                val_dataset, batch_size=batch_size,
+                shuffle=False, num_workers=num_workers,
+                pin_memory=torch.cuda.is_available()
+            )
+        else:
+            val_loader = None
+
+    elif lazy_window_active and not use_autoregressive:
         print("  - 使用按需窗口Dataset（不预展开3D窗口）")
         train_source_indices = sample_source_indices[train_indices]
         test_source_indices = sample_source_indices[test_indices]
@@ -2970,7 +3223,9 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
     else:
         print(f"  验证集: 无（使用 --no_val 模式）")
     print(f"  测试集: {len(test_data)} 样本")
-    if mode == 'window' and not use_time_window and lazy_window_active and base_features_2d is not None:
+    if mode == 'rf_image' and rf_image_active and base_features_2d is not None:
+        feature_dim = base_features_2d.shape[1]
+    elif mode == 'window' and not use_time_window and lazy_window_active and base_features_2d is not None:
         feature_dim = base_features_2d.shape[1]
     elif len(train_data.shape) >= 2:
         feature_dim = train_data.shape[-1]
@@ -2994,7 +3249,7 @@ def load_and_preprocess_data(config, dataset_root="./Dataset", normalize=False,
         user_indices_full = None
         user_names_list = []
 
-    if lazy_window_active and sample_source_indices is not None:
+    if (lazy_window_active or rf_image_active) and sample_source_indices is not None:
         train_split_indices_meta = sample_source_indices[train_indices]
         test_split_indices_meta = sample_source_indices[test_indices]
     else:

@@ -55,7 +55,7 @@ class TrainingConfig:
 class ModelConfig:
     """模型相关配置"""
     # 模型架构
-    architecture: str = "MLP"  # MLP, CNN, Transformer, TCN
+    architecture: str = "MLP"  # MLP, CNN, Transformer, TCN, RF_CNN
     
     # 模型参数 (input_size 会从数据自动推断)
     input_size: Optional[int] = None
@@ -212,10 +212,12 @@ class DataConfig:
     ar_test_interval: int = 5  # AR模式下真实推理测试间隔（每N个epoch测试一次，0表示每个epoch都测试）
     
     # 预测模式
-    mode: str = "instant"  # instant: 当前spectrum预测当前血糖, window: 历史窗口预测当前血糖
+    mode: str = "instant"  # instant: 当前spectrum预测当前血糖, window: 历史窗口预测当前血糖, rf_image: 射频时间-频谱图预测窗口平均血糖
     window_size: int = 10  # 窗口模式下使用的历史时间步数（样本数）
     window_duration: float = None  # 基于时间的窗口模式：窗口时长（秒），None表示使用window_size（样本数）
     window_padding: str = 'drop'  # 窗口前期样本处理: drop(丢弃), zero(零填充), repeat(重复填充), edge(边缘填充)
+    rf_image_minutes: float = 5.0  # rf_image模式下每张时间-频谱图覆盖的历史时长（分钟）
+    rf_image_time_bins: int = 300  # rf_image模式下二维图的时间采样点数
     
     # DataLoader 参数
     num_workers: int = 0  # Linux上建议设为0
@@ -533,6 +535,10 @@ def get_config_from_args(args) -> Config:
         config.data.window_duration = args.window_duration
     if hasattr(args, 'window_padding') and args.window_padding is not None:
         config.data.window_padding = args.window_padding
+    if hasattr(args, 'rf_image_minutes') and args.rf_image_minutes is not None:
+        config.data.rf_image_minutes = args.rf_image_minutes
+    if hasattr(args, 'rf_image_time_bins') and args.rf_image_time_bins is not None:
+        config.data.rf_image_time_bins = args.rf_image_time_bins
     
     # 应用数据划分比例
     if hasattr(args, 'train_split') and args.train_split is not None:
@@ -567,5 +573,9 @@ def get_config_from_args(args) -> Config:
         raise ValueError("mae_window_loss_weight 不能为负数")
     if config.training.mae_window_batches < 1:
         raise ValueError("mae_window_batches 必须 >= 1")
+    if config.data.rf_image_minutes <= 0:
+        raise ValueError("rf_image_minutes 必须为正数")
+    if config.data.rf_image_time_bins < 2:
+        raise ValueError("rf_image_time_bins 必须 >= 2")
     
     return config

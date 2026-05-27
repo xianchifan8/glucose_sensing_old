@@ -7,6 +7,7 @@ from .models import (
     GlucoseMLP,
     GlucoseCNN,
     GlucoseTransformer,
+    RFImageCNN,
     create_model,
     get_model,
 )
@@ -30,6 +31,7 @@ __all__ = [
     'GlucoseMLP',
     'GlucoseCNN',
     'GlucoseTransformer',
+    'RFImageCNN',
     'create_model',
     'get_model',
     # Late Fusion
